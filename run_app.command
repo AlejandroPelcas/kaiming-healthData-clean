@@ -1,12 +1,20 @@
 #!/bin/bash
-cd /path/to/your/project
+
+# Exit on error
+set -e
+
+# Move to the directory where this script lives
+cd "$(dirname "$0")"
 
 echo "Starting Flask..."
-python backend/app.py &
+python3 backend/app.py &
 
 echo "Starting React..."
 cd frontend
 npm start &
 
-sleep 5
+# Wait for React to compile
+sleep 10
+
+echo "Opening browser..."
 open http://localhost:3000
