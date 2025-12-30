@@ -1,0 +1,18 @@
+# Python
+backend/venv/
+__pycache__/
+*.pyc
+
+# Flask
+instance/
+.env
+
+# Node / React
+frontend/node_modules/
+frontend/build/
+
+# OS junk
+.DS_Store
+
+# Excel temp files
+~$*.xlsx
