@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+// #@Author: Alejandro Pelcastre
+import React, { useState } from "react"; // this line not used but needed
 import FileDrop from "./DragAndDrop";
 import YearMonthSelector from "./YearMonthSelector";
 import HealthProviderButton from "./HealthProvider";
@@ -56,31 +57,27 @@ function FileUpload() {
     
     const data = await response.json(); // even though response is df this will work
 
-    const renamedData = data.map(row => {
-    const { [metric]: metricValue, ...rest } = row;
-    return {
-      ...rest,
-      payroll: metricValue
-    };
-  });
+    console.log("--------Reponse Received: ----------", response)
 
 
-const columnsOrder = ["eecode", "Name", metric, "Invoice", "difference"];
+    const columnsOrder = ["eecode", "Name", metric, "Invoice", "difference"];
 
-const renamedOrderedData = data.map(row => {
-  const newRow = {};
+    const renamedOrderedData = data.map(row => {
+      const newRow = {};
 
-  columnsOrder.forEach(col => {
-    if (col === metric) {
-      newRow["payroll"] = row[col];   // rename here
-    } else if (row.hasOwnProperty(col)) {
-      newRow[col] = row[col];
-    }
-  });
+      columnsOrder.forEach(col => {
+        if (col === metric) {
+          newRow["payroll"] = row[col];   // rename here
+        } else if (row.hasOwnProperty(col)) {
+          newRow[col] = row[col];
+        }
+      });
 
-  return newRow;
-});
+      return newRow;
+    });
+
   setMismatches(renamedOrderedData);
+
   };
   return (
     <div>

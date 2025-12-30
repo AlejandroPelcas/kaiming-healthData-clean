@@ -1,3 +1,4 @@
+#@Author: Alejandro Pelcastre
 import pandas as pd
 import numpy as np
 from util import transform_paycom, transform_healthcare, create_comparison_df, combine_paycom_data
@@ -102,4 +103,4 @@ def get_data():
     return jsonify(data)
 
 if __name__ == "__main__":
-    app.run(port=5000)
+    app.run(debug=False)

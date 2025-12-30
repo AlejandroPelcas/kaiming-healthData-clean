@@ -1,20 +1,32 @@
 #!/bin/bash
 
-# Exit on error
+# Make sure the script stops on errors
 set -e
 
-# Move to the directory where this script lives
+# Navigate to script directory
 cd "$(dirname "$0")"
 
-echo "Starting Flask..."
-python3 backend/app.py &
 
-echo "Starting React..."
+# Kill anything on port 3000 (React)
+if lsof -i :3000 >/dev/null; then
+    echo "Killing process on port 3000..."
+    lsof -t -i :3000 | xargs kill -9
+fi
+
+# Start Flask in background
+echo "Starting Flask on port 5000..."
+cd backend
+python3 app.py &
+cd ..
+
+# Start React in background
+echo "Starting React on port 3000..."
 cd frontend
 npm start &
+cd ..
 
-# Wait for React to compile
-sleep 10
+# Give React a few seconds to start
+sleep 5
 
-echo "Opening browser..."
-open http://localhost:3000
+
+echo "All set! Flask and React are running."
