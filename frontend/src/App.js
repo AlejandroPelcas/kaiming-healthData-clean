@@ -4,6 +4,7 @@ import FileDrop from "./DragAndDrop";
 import YearMonthSelector from "./YearMonthSelector";
 import HealthProviderButton from "./HealthProvider";
 import MisMatchTable from "./MisMatchTable";
+import UnumMetric from "./UnumMetric";
 
 function FileUpload() {
   const [paycom1, setPaycom1] = useState(null);
@@ -107,6 +108,12 @@ function FileUpload() {
         metric={metric}
         setMetric={setMetric}
         />
+
+      <h2> If Selected UNUM, pick plan name</h2>
+      <UnumMetric
+        // metric={metric} Does unumType go here?
+        setMetric={setMetric}>
+      </UnumMetric>
 
       <YearMonthSelector
         year={year}
