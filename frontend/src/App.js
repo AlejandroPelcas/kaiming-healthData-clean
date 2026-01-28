@@ -16,6 +16,8 @@ function FileUpload() {
 
   const [provider, setProvider] = useState([]);
 
+  const [unumType, setUnumType] = useState([]);
+
   const [metric, setMetric] = useState([]);
 
   const handleSubmit = async (e) => {
@@ -36,6 +38,11 @@ function FileUpload() {
       return;
     }
 
+    if (provider == 'unum' && !unumType) {
+      alert("You've selected UNUM as a provider. Please also select UNUM type");
+      return;
+    }
+
     console.log("Provider =>", provider)
 
     const formData = new FormData();
@@ -45,8 +52,9 @@ function FileUpload() {
     formData.append("year", year);
     formData.append("month", month);
     formData.append("provider", provider);
-    formData.append("metric", metric)
-    const metadata = {"metric": metric, "provider":provider, "month": month, "year":year}
+    formData.append("metric", metric);
+    formData.append("unumType", unumType);
+    const metadata = {"metric": metric, "provider":provider, "month": month, "year":year, "unumType":unumType}
     console.log("Metadata: ", metadata)
     const response = await fetch("http://localhost:5000/upload", {
       method: "POST",

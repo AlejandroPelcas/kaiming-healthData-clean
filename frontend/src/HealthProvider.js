@@ -45,6 +45,49 @@ function HealthProviderButton({provider, setProvider, metric, setMetric}) {
         > Landmark
         </button>
 
+        {/* Jan 28 adding UNUM buttons */}
+        <button onClick={() => {
+            setProvider('UNUM');
+            setMetric('unum');
+        }} 
+        > UNUM
+        </button>
+
+        {/* <button onClick={() => {
+            setProvider('UNUM - EE AD&D');
+            setMetric('deva');
+        }} 
+        > UNUM - EE AD&D
+        </button>
+
+        <button onClick={() => {
+            setProvider('UNUM - SP LIFE');
+            setMetric('dsvl');
+        }} 
+        > UNUM - SP LIFE
+        </button>
+
+        <button onClick={() => {
+            setProvider('UNUM - SP AD&D');
+            setMetric('dsva');
+        }} 
+        > UNUM - SP AD&D
+        </button>
+
+        <button onClick={() => {
+            setProvider('UNUM - CH LIFE');
+            setMetric('dcvl');
+        }} 
+        > UNUM - CH LIFE
+        </button>
+
+        <button onClick={() => {
+            setProvider('UNUM - CH AD&D');
+            setMetric('dcva');
+        }} 
+        > UNUM - CH AD&D
+        </button> */}
+
         <p> Provider : {provider} </p>
     </div>
 );

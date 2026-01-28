@@ -1,32 +1,24 @@
 #!/bin/bash
 
-# Make sure the script stops on errors
-set -e
+# === Kill ports if in use ===
+echo "Killing ports 5000 and 3000 if occupied..."
+lsof -ti :5000 | xargs -r kill -9
+lsof -ti :3000 | xargs -r kill -9
 
-# Navigate to script directory
-cd "$(dirname "$0")"
+# === Start Flask in a new Terminal tab ===
+echo "Starting Flask backend..."
+osascript <<EOF
+tell application "Terminal"
+    do script "cd /Users/fiscalteam/Desktop/DataCleaningHealth/DataCleanHealthApp/backend && python3 app.py"
+end tell
+EOF
 
+# === Start React in a new Terminal tab ===
+echo "Starting React frontend..."
+osascript <<EOF
+tell application "Terminal"
+    do script "cd /Users/fiscalteam/Desktop/DataCleaningHealth/DataCleanHealthApp/frontend && npm start"
+end tell
+EOF
 
-# Kill anything on port 3000 (React)
-if lsof -i :3000 >/dev/null; then
-    echo "Killing process on port 3000..."
-    lsof -t -i :3000 | xargs kill -9
-fi
-
-# Start Flask in background
-echo "Starting Flask on port 5000..."
-cd backend
-python3 app.py &
-cd ..
-
-# Start React in background
-echo "Starting React on port 3000..."
-cd frontend
-npm start &
-cd ..
-
-# Give React a few seconds to start
-sleep 5
-
-
-echo "All set! Flask and React are running."
+echo "Both servers should now be running in separate Terminal tabs."

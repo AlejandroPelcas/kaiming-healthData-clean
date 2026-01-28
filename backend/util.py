@@ -1,5 +1,21 @@
 #TODO: Add more providers here
-PAYCOM_COLS = ['eecode', 'eename', 'dkrm', 'dcmp', 'duhm', 'dvsn', 'ddnt', 'dchi']
+PAYCOM_COLS = [
+    'eecode',
+    'eename',
+    'dkrm', 
+    'dcmp', 
+    'duhm', 
+    'dvsn', 
+    'ddnt', 
+    'dchi',
+    # Jan 28 - Adding UNUM variables
+    'devl',
+    'deva',
+    'dsvl',
+    'dsva',
+    'dcvl',
+    'dcva',
+    ]
 
 def transform_paycom(df):
     """
@@ -25,6 +41,8 @@ def combine_paycom_data(p1, p2):
     p1 = transform_paycom(p1)
     p2 = transform_paycom(p2)
 
+
+    #TODO: We want to make sure we count up all the eecodes instances.
     # aggregate duplicates per employee 
     agg_map = {
     'eename': 'first',   # names should be consistent
@@ -34,6 +52,13 @@ def combine_paycom_data(p1, p2):
     'dvsn': 'sum',
     'ddnt': 'sum',
     'dchi': 'sum',
+    # Jan 28 - Adding UNUM variables
+    'devl': 'sum',
+    'deva': 'sum',
+    'dsvl': 'sum',
+    'dsva': 'sum',
+    'dcvl': 'sum',
+    'dcva': 'sum',
     }
 
     p1 = (
@@ -49,7 +74,22 @@ def combine_paycom_data(p1, p2):
     )
 
     # add numeric columns safely ---
-    numeric_cols = ['dkrm', 'dcmp', 'duhm', 'dvsn', 'ddnt', 'dchi']
+    numeric_cols = [
+        'dkrm', 
+        'dcmp', 
+        'duhm', 
+        'dvsn', 
+        'ddnt', 
+        'dchi',
+        # Jan 28 - Adding UNUM variables
+        'devl',
+        'deva',
+        'dsvl',
+        'dsva',
+        'dcvl',
+        'dcva',
+        ]
+        
     paycom_master = p1.copy()
 
     paycom_master[numeric_cols] = (
@@ -102,6 +142,14 @@ def transform_healthcare(df, vendor: str):
         df.columns = ['eecode','name','EE Deductable']
         df['eename'] = df['name'].str.strip()  # standardize column
         df = df[['eecode', 'eename', 'EE Deductable']]
+
+    elif vendor.lower() == 'unum':
+        df = df[3:].copy() # remove top 3 rows because they're not data
+        df = df.iloc[:, [1,2,3,5]] # [eeid, name, plan_name, amount]
+        df.columns = ['eecode', 'name', 'plan_name', 'EE Deductable']
+        df['eename'] = df['name'].str.strip()  # rename 'name' to 'eename'
+        df = df[['eecode', 'eename', 'EE Deductable','plan_name']]
+        df = df.dropna(subset=['eecode']) #There's NaN rows to seperate people, remove those dead rows
 
     else:
         raise ValueError("Vendor must be 'kaiser', 'united_cchp', 'vision', 'landmark', or 'dental'")

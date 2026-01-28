@@ -7,6 +7,7 @@ function YearMonthSelector({year, month, setYear, setMonth}) {
             <button onClick={() => setYear("2024")}> 2024 </button>
             <button onClick={() => setYear("2025")}> 2025 </button>
             <button onClick={() => setYear("2026")}> 2026 </button>
+            <button onClick={() => setYear("2027")}> 2027 </button>
 
 
             <h3>Select Month</h3>
