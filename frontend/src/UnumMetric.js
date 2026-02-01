@@ -1,41 +1,43 @@
-function UnumMetricButton({metric, setMetric}) {
+function UnumMetricButton({metric, setMetric, unumType, setUnumType}) {
     return (
         <div>
             <button onClick={() => {
-                setMetric('devl');
+                setUnumType('devl');
             }}
             > devl 
             </button>
 
             <button onClick={() => {
-                setMetric('deva');
+                setUnumType('deva');
             }}
             > deva 
             </button>
 
             <button onClick={() => {
-                setMetric('dsvl');
+                setUnumType('dsvl');
             }}
             > dsvl 
             </button>
 
             <button onClick={() => {
-                setMetric('dsva');
+                setUnumType('dsva');
             }}
             > dsva 
             </button>
 
             <button onClick={() => {
-                setMetric('dcvl');
+                setUnumType('dcvl');
             }}
             > dcvl 
             </button>
 
             <button onClick={() => {
-                setMetric('dcva');
+                setUnumType('dcva');
             }}
             > dcva 
             </button>
+
+            <p> unumType : {unumType} </p>
 
         </div>
     )

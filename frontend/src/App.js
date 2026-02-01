@@ -112,7 +112,12 @@ function FileUpload() {
       <h2> If Selected UNUM, pick plan name</h2>
       <UnumMetric
         // metric={metric} Does unumType go here?
-        setMetric={setMetric}>
+        metric={metric}
+        setMetric={setMetric}
+        unumType={unumType}
+        setUnumType={setUnumType}
+        >
+        
       </UnumMetric>
 
       <YearMonthSelector
