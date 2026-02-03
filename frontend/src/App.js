@@ -69,7 +69,10 @@ function FileUpload() {
     console.log("--------Reponse Received: ----------", response)
 
 
-    const columnsOrder = ["eecode", "Name", metric, "Invoice", "difference"];
+    let columnsOrder = ["eecode", "Name", metric, "Invoice", "difference"];
+    if (unumType) {
+      columnsOrder = ["eecode", "Name", unumType, "Invoice", "difference"];
+    }
 
     const renamedOrderedData = data.map(row => {
       const newRow = {};
@@ -77,7 +80,9 @@ function FileUpload() {
       columnsOrder.forEach(col => {
         if (col === metric) {
           newRow["payroll"] = row[col];   // rename here
-        } else if (row.hasOwnProperty(col)) {
+        } if (col == unumType) {
+          newRow["payroll"] = row[col];   // rename here
+        }else if (row.hasOwnProperty(col)) {
           newRow[col] = row[col];
         }
       });

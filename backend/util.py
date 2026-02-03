@@ -158,7 +158,7 @@ def transform_healthcare(df, vendor: str, unumType: str):
         df = df.iloc[:, [1,2,3,5]] # [eeid, name, plan_name, amount]
         df.columns = ['eecode', 'name', 'plan_name', 'EE Deductable']
         df['eename'] = df['name'].str.strip()  # rename 'name' to 'eename'
-        df = df[df['plan_name'] == payroll_code_map[unumType]]
+        df = df[df['plan_name'] == payroll_code_map[unumType]] #maps the plan_name to correct payroll code for spliting dataset
         df = df[['eecode', 'eename', 'EE Deductable']]
 
         df = df.dropna(subset=['eecode']) #There's NaN rows to seperate people, remove those dead rows
