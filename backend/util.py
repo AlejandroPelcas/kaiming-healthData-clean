@@ -171,7 +171,13 @@ def transform_healthcare(df, vendor: str, unumType: str):
     df['eecode'] = df['eecode'].astype(str).str.strip()
     df['EE Deductable'] = pd.to_numeric(df['EE Deductable'], errors='coerce')
     df = df.drop_duplicates() #TODO: NEED TO CHANGE THIS TO AGGREGATE DUPLICATES NOT DROP THEM
-
+    df = (
+        df
+        .groupby("eecode", as_index=False)
+        .agg({
+            "EE Deductable": "sum",
+        })
+    )
 
     return df.reset_index(drop=True)
 
