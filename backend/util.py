@@ -170,14 +170,20 @@ def transform_healthcare(df, vendor: str, unumType: str):
     df = df.dropna(subset=['eecode'])
     df['eecode'] = df['eecode'].astype(str).str.strip()
     df['EE Deductable'] = pd.to_numeric(df['EE Deductable'], errors='coerce')
-    df = df.drop_duplicates() #TODO: NEED TO CHANGE THIS TO AGGREGATE DUPLICATES NOT DROP THEM
+    # df = df.drop_duplicates() #TODO: NEED TO CHANGE THIS TO AGGREGATE DUPLICATES NOT DROP THEM
+    print("Columns before groupby:", df.columns)
     df = (
         df
         .groupby("eecode", as_index=False)
         .agg({
-            "EE Deductable": "sum",
+            'EE Deductable': 'sum',
+            'eename': 'first',   # or 'last'
         })
     )
+    df['EE Deductable'] = df['EE Deductable'].round(2) # only take in hundredths place
+
+    print("Columns after groupby:", df.columns)
+
 
     return df.reset_index(drop=True)
 
