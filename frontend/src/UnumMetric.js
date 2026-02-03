@@ -4,37 +4,37 @@ function UnumMetricButton({metric, setMetric, unumType, setUnumType}) {
             <button onClick={() => {
                 setUnumType('devl');
             }}
-            > devl 
+            > EE LIFE 
             </button>
 
             <button onClick={() => {
                 setUnumType('deva');
             }}
-            > deva 
+            > EE AD&D 
             </button>
 
             <button onClick={() => {
                 setUnumType('dsvl');
             }}
-            > dsvl 
+            > SP LIFE 
             </button>
 
             <button onClick={() => {
                 setUnumType('dsva');
             }}
-            > dsva 
+            > SP AD&D 
             </button>
 
             <button onClick={() => {
                 setUnumType('dcvl');
             }}
-            > dcvl 
+            > CH LIFE 
             </button>
 
             <button onClick={() => {
                 setUnumType('dcva');
             }}
-            > dcva 
+            > CH AD&D 
             </button>
 
             <p> unumType : {unumType} </p>
