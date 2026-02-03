@@ -5,6 +5,7 @@ import YearMonthSelector from "./YearMonthSelector";
 import HealthProviderButton from "./HealthProvider";
 import MisMatchTable from "./MisMatchTable";
 import UnumMetric from "./UnumMetric";
+import YearInput from "./YearInput";
 
 function FileUpload() {
   const [paycom1, setPaycom1] = useState(null);
@@ -124,6 +125,11 @@ function FileUpload() {
         >
         
       </UnumMetric>
+
+      <YearInput
+        year={year}
+        setYear={setYear}
+      />
 
       <YearMonthSelector
         year={year}
