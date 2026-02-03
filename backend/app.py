@@ -52,6 +52,8 @@ def upload_files():
     provider = request.form.get("provider")
     metric = request.form.get("metric")
 
+    unumType = request.form.get("unumType")
+
     date = year + ' ' + month
 
     if not month or not year:
@@ -65,7 +67,7 @@ def upload_files():
         return jsonify({"error": "Missing file(s)"}), 400
 
 
-    # Merge Paycom stubs
+    # Merge Paycom stubs with desired metrics 
     paycom_cleaned = combine_paycom_data(pd.read_excel(paycom1), pd.read_excel(paycom2))
 
     # Save DataFrame to in-memory Excel file
@@ -75,15 +77,15 @@ def upload_files():
 
     # Transform healthcare data (example: vendor="kaiser")
     df_health = pd.read_excel(health, date) #TODO: THE DATE NEEDS TO BE INFERED OR ASKED NOT HARD WIRED <DONE: it's chosen by user>
-    df_health_transformed = transform_healthcare(df_health, vendor=provider)
+    df_health_transformed = transform_healthcare(df_health, vendor=provider, unumType=unumType)
 
     # Compare Paycom vs healthcare
-    data = create_comparison_df(paycom_cleaned, df_health_transformed, col=metric)
+    data = create_comparison_df(paycom_cleaned, df_health_transformed, col=metric, unumType=unumType)
 
     # Keep only rows where match == False
     mismatches = data
 
-    print(data)
+    print("The data:",data)
     # Return the full comparison as JSON - orient records creates a list of dictionaries
     # Replace all NaN/inf values with None
     mismatches = mismatches.replace({np.nan: None, np.inf: None, -np.inf: None})

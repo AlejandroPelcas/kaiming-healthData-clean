@@ -89,7 +89,7 @@ def combine_paycom_data(p1, p2):
         'dcvl',
         'dcva',
         ]
-        
+
     paycom_master = p1.copy()
 
     paycom_master[numeric_cols] = (
@@ -100,12 +100,21 @@ def combine_paycom_data(p1, p2):
     print("--------- Outputing cleaned paycom---------")
     return paycom_master
 
-def transform_healthcare(df, vendor: str):
+def transform_healthcare(df, vendor: str, unumType: str):
     """
     Transform healthcare data for different vendors into a consistent format.
     Output columns: ['eecode', 'eename', 'EE Deductable']
     """
     df = df.copy()
+
+    payroll_code_map = {
+    'devl' : 'EE LIFE',
+    'deva' : 'EE AD&D',
+    'dsvl' : 'SP LIFE',
+    'dsva' : 'SP AD&D',
+    'dcvl' : 'CH LIFE',
+    'dcva' : 'CH AD&D',
+}
     
     if vendor.lower() == 'kaiser':
         df = df[3:].copy()
@@ -144,35 +153,44 @@ def transform_healthcare(df, vendor: str):
         df = df[['eecode', 'eename', 'EE Deductable']]
 
     elif vendor.lower() == 'unum':
+        print("Vendor is ", vendor.lower(), "and unumtype is ", unumType)
         df = df[3:].copy() # remove top 3 rows because they're not data
         df = df.iloc[:, [1,2,3,5]] # [eeid, name, plan_name, amount]
         df.columns = ['eecode', 'name', 'plan_name', 'EE Deductable']
         df['eename'] = df['name'].str.strip()  # rename 'name' to 'eename'
-        df = df[['eecode', 'eename', 'EE Deductable','plan_name']]
+        df = df[df['plan_name'] == payroll_code_map[unumType]]
+        df = df[['eecode', 'eename', 'EE Deductable']]
+
         df = df.dropna(subset=['eecode']) #There's NaN rows to seperate people, remove those dead rows
 
     else:
-        raise ValueError("Vendor must be 'kaiser', 'united_cchp', 'vision', 'landmark', or 'dental'")
+        raise ValueError("Vendor must be 'kaiser', 'united_cchp', 'vision', 'landmark', 'dental', or 'unum'")
 
     # Drop rows with missing eecode
     df = df.dropna(subset=['eecode'])
     df['eecode'] = df['eecode'].astype(str).str.strip()
     df['EE Deductable'] = pd.to_numeric(df['EE Deductable'], errors='coerce')
-    df = df.drop_duplicates()
+    df = df.drop_duplicates() #TODO: NEED TO CHANGE THIS TO AGGREGATE DUPLICATES NOT DROP THEM
 
 
     return df.reset_index(drop=True)
 
 
-def create_comparison_df(df_1, df_2, col):
+def create_comparison_df(df_1, df_2, col, unumType):
     comparison = df_1.merge(
         df_2,
         on='eecode',
         how='outer',
         suffixes=('_df1', '_df2')
     )
+
+    # If we're doing unumType, that is the metric
+    if unumType and col == 'unum':
+        col = unumType
+    print("Unumtype and col:", unumType, col)
     # EE Deducition is object not float. Change that
     comparison.columns = comparison.columns.str.strip() # Removes trailing white space
+    print("Comparison Columns: [", comparison.columns,"]")
     comparison["EE Deductable"] = pd.to_numeric(comparison["EE Deductable"], errors="coerce")
     comparison[col] = pd.to_numeric(comparison[col], errors="coerce")
     # Create match column that is a boolean
@@ -196,7 +214,7 @@ def create_comparison_df(df_1, df_2, col):
     columns = ['eecode',col,"EE Deductable", 'difference']
     if col in ['duhm']:
         columns.append('eename_df1')
-    elif col in ['dvsn', 'ddnt', 'dkrm','dcmp', 'dchi']:
+    elif col in ['dvsn', 'ddnt', 'dkrm','dcmp', 'dchi', 'devl','deva','dsvl','dsva','dcvl','dcva']:
         columns.append('eename_df1')
 
 

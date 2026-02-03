@@ -47,7 +47,7 @@ function HealthProviderButton({provider, setProvider, metric, setMetric}) {
 
         {/* Jan 28 adding UNUM buttons */}
         <button onClick={() => {
-            setProvider('UNUM');
+            setProvider('unum');
             setMetric('unum');
         }} 
         > UNUM
