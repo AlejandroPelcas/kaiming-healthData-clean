@@ -106,18 +106,18 @@ def upload_files():
     # This makes it so names are never empty even if payroll is 0 or NaN
     # Apply the mapping
     print("Name MAP", name_map)
-    # mismatches['Name'] = (
-    #     mismatches['eecode']
-    #     .map(name_map)
-    #     .fillna(mismatches['Name'])  # preserve existing names
-    # )
+    mismatches['Name'] = (
+        mismatches['eecode']
+        .map(name_map)
+        .fillna(mismatches['Name'])  # preserve existing names
+    )
 
     mismatches["Name"] = (
         mismatches["Name"]
         .fillna(mismatches["eecode"].map(name_map))
     )
 
-    # mismatches = mismatches.replace({np.nan: None, np.inf: None, -np.inf: None})
+    mismatches = mismatches.replace({np.nan: None, np.inf: None, -np.inf: None})
 
     print("The data AFTER NAME ADD:", mismatches)
 
