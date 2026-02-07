@@ -12,14 +12,10 @@ function FileUpload() {
   const [paycom2, setPaycom2] = useState(null);
   const [health, setHealth] = useState(null);
   const [mismatches, setMismatches] = useState([]);
-
   const [year, setYear] = useState([]);
   const [month, setMonth] = useState([]); 
-
   const [provider, setProvider] = useState([]);
-
   const [unumType, setUnumType] = useState([]);
-
   const [metric, setMetric] = useState([]);
 
   const handleSubmit = async (e) => {

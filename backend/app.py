@@ -92,7 +92,7 @@ def upload_files():
     # Replace all NaN/inf values with None
     # 1. Normalize types
     mismatches["eecode"] = mismatches["eecode"].astype(str)
-    name_map = {str(k): v for k, v in name_map.items()}
+    name_map = create_name_map(df_health_transformed)
 
     # 2. Fill missing names using pandas NaN
     mismatches["Name"] = (

@@ -34,7 +34,6 @@ def transform_paycom(df):
 
     return df
 
-#TODO: Finish the func so that inputing two paycom files combines em
 def combine_paycom_data(p1, p2):
     """ Take two paycom invoices of the same month and aggregate them into one df """
     # Clean up and normalize data
@@ -248,12 +247,12 @@ def create_comparison_df(df_1, df_2, col, unumType):
 
     return mismatches
 
-def create_name_map(data):
+def create_name_map(health_data_transformed):
     return (
-        data
+        health_data_transformed
         .assign(
-            eecode=data["eecode"].astype(str),
-            Name=data["eename"].astype(str).str.strip()
+            eecode=health_data_transformed["eecode"].astype(str),
+            Name=health_data_transformed["eename"].astype(str).str.strip()
         )
         .set_index("eecode")["Name"]
         .to_dict()
