@@ -6,6 +6,8 @@ import HealthProviderButton from "./HealthProvider";
 import MisMatchTable from "./MisMatchTable";
 import UnumMetric from "./UnumMetric";
 import YearInput from "./YearInput";
+import "./App.css"; // Connect css to react front end
+
 
 function FileUpload() {
   const [paycom1, setPaycom1] = useState(null);

@@ -36,3 +36,18 @@
     transform: rotate(360deg);
   }
 }
+
+button {
+  background-color: snow;
+  border-radius: 8%;
+  padding: 1%;
+  margin-left: 1em;
+}
+
+button:hover {
+  background-color: mistyrose;
+}
+
+button:active {
+  background-color: rosybrown;
+}

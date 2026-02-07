@@ -48,7 +48,7 @@ const styles = {
   th: {
     textAlign: "left",
     padding: "12px",
-    background: "#f9fafb",
+    background: "whitesmoke",
     color: "#374151",
     fontWeight: 600,
     borderBottom: "1px solid #e5e7eb",
@@ -62,9 +62,10 @@ const styles = {
   },
   tr: {
     transition: "background 0.15s ease",
+  
   },
   empty: {
-    color: "#6b7280",
+    color: "#6b7299",
     padding: "12px",
   },
 };
