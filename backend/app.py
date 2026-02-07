@@ -1,7 +1,7 @@
 #@Author: Alejandro Pelcastre
 import pandas as pd
 import numpy as np
-from util import transform_paycom, transform_healthcare, create_comparison_df, combine_paycom_data
+from util import transform_paycom, transform_healthcare, create_comparison_df, combine_paycom_data, create_name_map
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 import os
@@ -85,10 +85,41 @@ def upload_files():
     # Keep only rows where match == False
     mismatches = data
 
-    print("The data:",data)
+    print("The data:", mismatches)
+    name_map = create_name_map(paycom_cleaned)   # <-- use the original dataset
+
     # Return the full comparison as JSON - orient records creates a list of dictionaries
     # Replace all NaN/inf values with None
+    # 1. Normalize types
+    mismatches["eecode"] = mismatches["eecode"].astype(str)
+    name_map = {str(k): v for k, v in name_map.items()}
+
+    # 2. Fill missing names using pandas NaN
+    mismatches["Name"] = (
+        mismatches["Name"]
+        .fillna(mismatches["eecode"].map(name_map))
+    )
+
+    # 3. ONLY at the end (if required for JSON)
     mismatches = mismatches.replace({np.nan: None, np.inf: None, -np.inf: None})
+
+    # This makes it so names are never empty even if payroll is 0 or NaN
+    # Apply the mapping
+    print("Name MAP", name_map)
+    # mismatches['Name'] = (
+    #     mismatches['eecode']
+    #     .map(name_map)
+    #     .fillna(mismatches['Name'])  # preserve existing names
+    # )
+
+    mismatches["Name"] = (
+        mismatches["Name"]
+        .fillna(mismatches["eecode"].map(name_map))
+    )
+
+    # mismatches = mismatches.replace({np.nan: None, np.inf: None, -np.inf: None})
+
+    print("The data AFTER NAME ADD:", mismatches)
 
     # Convert to list of dicts for JSON
     records = mismatches.to_dict(orient="records")

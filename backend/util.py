@@ -1,4 +1,5 @@
-#TODO: Add more providers here
+import pandas as pd
+
 PAYCOM_COLS = [
     'eecode',
     'eename',
@@ -32,7 +33,6 @@ def transform_paycom(df):
     )
 
     return df
-import pandas as pd
 
 #TODO: Finish the func so that inputing two paycom files combines em
 def combine_paycom_data(p1, p2):
@@ -247,5 +247,16 @@ def create_comparison_df(df_1, df_2, col, unumType):
 
 
     return mismatches
+
+def create_name_map(data):
+    return (
+        data
+        .assign(
+            eecode=data["eecode"].astype(str),
+            Name=data["eename"].astype(str).str.strip()
+        )
+        .set_index("eecode")["Name"]
+        .to_dict()
+    )
 
 
