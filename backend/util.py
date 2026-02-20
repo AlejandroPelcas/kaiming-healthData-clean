@@ -194,7 +194,7 @@ def create_comparison_df(df_1, df_2, col, unumType):
         how='outer',
         suffixes=('_df1', '_df2')
     )
-
+    print("Comparison\n", comparison)
     # If we're doing unumType, that is the metric
     if unumType and col == 'unum':
         col = unumType
@@ -203,18 +203,21 @@ def create_comparison_df(df_1, df_2, col, unumType):
     comparison.columns = comparison.columns.str.strip() # Removes trailing white space
     print("Comparison Columns: [", comparison.columns,"]")
     comparison["EE Deductable"] = pd.to_numeric(comparison["EE Deductable"], errors="coerce")
-    comparison[col] = pd.to_numeric(comparison[col], errors="coerce")
+    comparison[col] = pd.to_numeric(comparison[col], errors="coerce").fillna(0)
+
     # Create match column that is a boolean
     comparison["match"] = (
         (comparison[col] == comparison["EE Deductable"])  |
         (comparison[col].isna() & comparison["EE Deductable"].isna())  |
         (comparison[col].fillna(0.0) == comparison["EE Deductable"].fillna(0.0))  
     )
+
     # Show difference if any between paycom and provider
+    # PAYROLL - INVOICE = DIFFERENCE
     comparison["difference"] = (
     comparison[col].fillna(0) - comparison["EE Deductable"].fillna(0)
     ).round(2)
-
+    #print((comparison[col][comparison[col] > 0])) # this is a Series
 
     # Update match column to ignore tiny differences (<0.05)
     comparison["match"] = comparison["match"] | (comparison["difference"].abs() < 0.05)
@@ -233,7 +236,7 @@ def create_comparison_df(df_1, df_2, col, unumType):
 
     mismatches = mismatches.rename(columns={'eename_df1': 'Name', 'EE Deductable': 'Invoice',})
     # Set the column order 
-    
+    print("Mismatch ONE: ", mismatches)
     # Print list of eecodes with mismatches
     print(f"There are mismatches for eecode(s): {mismatches['eecode'].tolist()}")
     

@@ -74,19 +74,20 @@ function FileUpload() {
     }
 
     const renamedOrderedData = data.map(row => {
-      const newRow = {};
+      const payrollKey = Object.keys(row).find(
+        key => key !== "eecode" &&
+              key !== "Name" &&
+              key !== "Invoice" &&
+              key !== "difference"
+      );
 
-      columnsOrder.forEach(col => {
-        if (col === metric) {
-          newRow["payroll"] = row[col];   // rename here
-        } if (col == unumType) {
-          newRow["payroll"] = row[col];   // rename here
-        }else if (row.hasOwnProperty(col)) {
-          newRow[col] = row[col];
-        }
-      });
-
-      return newRow;
+      return {
+        eecode: row.eecode,
+        Name: row.Name,
+        payroll: row[payrollKey],
+        Invoice: row.Invoice,
+        difference: row.difference
+      };
     });
 
   setMismatches(renamedOrderedData);

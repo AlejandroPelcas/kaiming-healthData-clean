@@ -105,7 +105,7 @@ def upload_files():
 
     # This makes it so names are never empty even if payroll is 0 or NaN
     # Apply the mapping
-    print("Name MAP", name_map)
+   # print("Name MAP", name_map)
     mismatches['Name'] = (
         mismatches['eecode']
         .map(name_map)
@@ -123,7 +123,8 @@ def upload_files():
 
     # Convert to list of dicts for JSON
     records = mismatches.to_dict(orient="records")
-
+    
+    print("Final backend result:\n", records)
     return jsonify(records)
 
 @app.route("/get-data")
