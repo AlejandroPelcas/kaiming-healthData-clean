@@ -9,6 +9,8 @@ import YearInput from "./YearInput";
 import "./App.css"; // Connect css to react front end
 
 
+
+
 function FileUpload() {
   const [paycom1, setPaycom1] = useState(null);
   const [paycom2, setPaycom2] = useState(null);
@@ -38,7 +40,7 @@ function FileUpload() {
       return;
     }
 
-    if (provider == 'unum' && !unumType) {
+    if (provider === 'unum' && !unumType) {
       alert("You've selected UNUM as a provider. Please also select UNUM type");
       return;
     }
@@ -68,10 +70,7 @@ function FileUpload() {
     console.log("--------Reponse Received: ----------", response)
 
 
-    let columnsOrder = ["eecode", "Name", metric, "Invoice", "difference"];
-    if (unumType) {
-      columnsOrder = ["eecode", "Name", unumType, "Invoice", "difference"];
-    }
+  
 
     const renamedOrderedData = data.map(row => {
       const payrollKey = Object.keys(row).find(
@@ -93,37 +92,70 @@ function FileUpload() {
   setMismatches(renamedOrderedData);
 
   };
+
+
   return (
-    <div>
-      <h1>Upload Paycom + Provider Files</h1>
+  <div className="container">
 
-      <FileDrop label="<Paycom Check Register days 1 - 15>" onFileSelect={setPaycom1} file={paycom1}/>
-      {paycom1 && <p>Selected: {paycom1.name}</p>}
+    <div className="app-header">
+      <img
+        src="/kai-ming-logo.jpeg"
+        alt="Kai Ming Logo"
+        className="logo"
+      />
+      <h1>Kai Ming Benefits Reconciliation</h1>
+      <p>Upload Paycom payroll reports and provider invoices</p>
+    </div>
 
-      <FileDrop label="<Paycom Check Register days 16- 31>" onFileSelect={setPaycom2} file={paycom2} />
-      {paycom2 && <p>Selected: {paycom2.name}</p>}
+    <div className="section-card">
+      <h2>Upload Files</h2>
 
-      <FileDrop label="<Health Provider {Kaiser, Dental, Vision, UHC, CCHP, Landma} Data File>" onFileSelect={setHealth} file={health} />
-      {health && <p>Selected: {health.name}</p>}
+      <FileDrop
+        label="<Paycom Check Register days 1 - 15>"
+        onFileSelect={setPaycom1}
+        file={paycom1}
+      />
+      {paycom1 && <p className="file-name">{paycom1.name}</p>}
 
-      <h2> Select Data's Health Provider </h2>
+      <FileDrop
+        label="<Paycom Check Register days 16 - 31>"
+        onFileSelect={setPaycom2}
+        file={paycom2}
+      />
+      {paycom2 && <p className="file-name">{paycom2.name}</p>}
+
+      <FileDrop
+        label="<Health Provider Data File>"
+        onFileSelect={setHealth}
+        file={health}
+      />
+      {health && <p className="file-name">{health.name}</p>}
+    </div>
+
+    <div className="section-card">
+      <h2>Select Health Provider</h2>
+
       <HealthProviderButton
         provider={provider}
         setProvider={setProvider}
         metric={metric}
         setMetric={setMetric}
-        />
+      />
+    </div>
 
-      <h2> If Selected UNUM, pick plan name</h2>
+    <div className="section-card">
+      <h2>UNUM Plan Selection</h2>
+
       <UnumMetric
-        // metric={metric} Does unumType go here?
         metric={metric}
         setMetric={setMetric}
         unumType={unumType}
         setUnumType={setUnumType}
-        >
-        
-      </UnumMetric>
+      />
+    </div>
+
+    <div className="section-card">
+      <h2>Period Selection</h2>
 
       <YearInput
         year={year}
@@ -136,15 +168,26 @@ function FileUpload() {
         setYear={setYear}
         setMonth={setMonth}
       />
+    </div>
 
-      <button onClick={handleSubmit}>Compare</button>
+    <div className="action-bar">
+      <button
+        className="compare-button"
+        onClick={handleSubmit}
+      >
+        Compare Files
+      </button>
+    </div>
 
-      <h2>Mismatches:</h2>
-      <p> Note: This ignores differences less than $.05 </p>
+    <div className="section-card">
+      <h2>Mismatches</h2>
+      <p>Note: Differences less than $0.05 are ignored.</p>
 
       <MisMatchTable mismatches={mismatches} />
     </div>
-  );
+
+  </div>
+);
 }
 
 export default FileUpload;

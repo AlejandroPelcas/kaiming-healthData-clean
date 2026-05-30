@@ -1,46 +1,51 @@
-function UnumMetricButton({metric, setMetric, unumType, setUnumType}) {
+function UnumMetricButton({ metric, setMetric, unumType, setUnumType }) {
     return (
         <div>
-            <button onClick={() => {
-                setUnumType('devl');
-            }}
-            > EE LIFE 
+            <button
+                className={unumType === "devl" ? "selected" : ""}
+                onClick={() => setUnumType("devl")}
+            >
+                EE LIFE
             </button>
 
-            <button onClick={() => {
-                setUnumType('deva');
-            }}
-            > EE AD&D 
+            <button
+                className={unumType === "deva" ? "selected" : ""}
+                onClick={() => setUnumType("deva")}
+            >
+                EE AD&D
             </button>
 
-            <button onClick={() => {
-                setUnumType('dsvl');
-            }}
-            > SP LIFE 
+            <button
+                className={unumType === "dsvl" ? "selected" : ""}
+                onClick={() => setUnumType("dsvl")}
+            >
+                SP LIFE
             </button>
 
-            <button onClick={() => {
-                setUnumType('dsva');
-            }}
-            > SP AD&D 
+            <button
+                className={unumType === "dsva" ? "selected" : ""}
+                onClick={() => setUnumType("dsva")}
+            >
+                SP AD&D
             </button>
 
-            <button onClick={() => {
-                setUnumType('dcvl');
-            }}
-            > CH LIFE 
+            <button
+                className={unumType === "dcvl" ? "selected" : ""}
+                onClick={() => setUnumType("dcvl")}
+            >
+                CH LIFE
             </button>
 
-            <button onClick={() => {
-                setUnumType('dcva');
-            }}
-            > CH AD&D 
+            <button
+                className={unumType === "dcva" ? "selected" : ""}
+                onClick={() => setUnumType("dcva")}
+            >
+                CH AD&D
             </button>
 
-            <p> unumType : {unumType} </p>
-
+            <p>unumType: {unumType}</p>
         </div>
-    )
+    );
 }
 
 export default UnumMetricButton;

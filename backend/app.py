@@ -16,6 +16,15 @@ app = Flask(
     static_url_path=""
 )
 
+@app.before_request
+def log_every_request():
+    print(
+        f"REQUEST: {request.method} {request.path}",
+        flush=True
+    )
+
+print("LOADED APP.PY", __file__)
+
 CORS(app) # allow all origins for simplicity
 """
 Load the data in. Expect input to be in .xlsx format
@@ -26,6 +35,7 @@ Then use pd.read_excel(xls, 'name_of_sheet') to get sheet data from each dataset
 
 @app.route("/")
 def index():
+    print("hi")
     return send_from_directory(app.static_folder, "index.html")
 
 @app.route("/receive-date")
@@ -39,8 +49,15 @@ def receive_date():
 
     return jsonify({"status" : "updated"})
 
-@app.route("/upload", methods=["POST"])
+@app.route("/upload", methods=["POST", "OPTIONS"])
 def upload_files():
+
+    print("\n========== /upload HIT ==========")
+    print("Method:", request.method)
+
+    if request.method == "OPTIONS":
+        print("OPTIONS PREFLIGHT RECEIVED")
+        return "", 200
     print("Uploading files ....")
     # Access files by the SAME names used in FormData
     paycom1 = request.files.get("paycom1")
@@ -137,4 +154,4 @@ def get_data():
     return jsonify(data)
 
 if __name__ == "__main__":
-    app.run(debug=False)
+    app.run(debug=True)

@@ -12,19 +12,28 @@ function FileDrop({ label, onFileSelect, file }) {
   });
 
   // Background color based on whether a file exists
-  const backgroundColor = file ? "#d3ffd3" : "#fff9b0"; // light green if file, light yellow if none
-
+  const backgroundColor = isDragActive
+  ? "#dce9f9"
+  : file
+  ? "#e8f1fc"
+  : "#f8fbff";
+  
   return (
     <div
       {...getRootProps()}
       style={{
-        border: "2px dashed #999",
+        border: file
+          ? "2px solid #1e4d8f"
+          : "2px dashed #4f7cac",
         padding: "20px",
         marginBottom: "15px",
         textAlign: "center",
-        backgroundColor: backgroundColor,
+        backgroundColor,
+        borderRadius: "12px",
         cursor: "pointer",
-        transition: "background-color 0.2s",
+        transition: "all 0.2s ease",
+        color: "#112240",
+        fontWeight: "500",
       }}
     >
       <input {...getInputProps()} />

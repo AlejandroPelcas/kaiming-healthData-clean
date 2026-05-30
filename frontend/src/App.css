@@ -1,53 +1,193 @@
-.App {
+/* =========================
+   Kai Ming Benefits Portal
+   ========================= */
+
+   body {
+    margin: 0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f7fb;
+    color: #1f2937;
+  }
+  
+  /* Main page container */
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 30px;
+  }
+  
+  /* Header card */
+  .app-header {
+    text-align: center;
+    background: white;
+    padding: 30px;
+    border-radius: 16px;
+    margin-bottom: 35px;
+    box-shadow: 0 4px 16px rgba(17, 34, 64, 0.08);
+  }
+  
+  .app-header h1 {
+    margin: 10px 0;
+    color: #112240;
+    font-size: 2rem;
+  }
+  
+  .app-header p {
+    color: #64748b;
+    margin: 0;
+  }
+  
+  /* Logo */
+  .logo {
+    width: 180px;
+    height: auto;
+    margin-bottom: 10px;
+  }
+  
+  /* Section headings */
+  h2 {
+    color: #112240;
+    margin-top: 30px;
+    margin-bottom: 15px;
+  }
+  
+  h3 {
+    color: #1e4d8f;
+  }
+  
+  /* Buttons */
+  button {
+    padding: 10px 18px;
+    margin: 5px;
+    border-radius: 8px;
+    border: 1px solid #d6dce5;
+    background-color: white;
+    color: #112240;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  button:hover {
+    background-color: #dce9f9;
+    border-color: #4f7cac;
+  }
+  
+  button:active {
+    transform: translateY(1px);
+  }
+  
+  /* Selected buttons */
+  button.selected {
+    background-color: #112240;
+    color: white;
+    border: 2px solid #4f7cac;
+    font-weight: 600;
+    box-shadow: 0 3px 10px rgba(17, 34, 64, 0.25);
+  }
+  
+  /* File upload cards (if your FileDrop uses these classes) */
+  .dropzone {
+    background: white;
+    border: 2px dashed #4f7cac;
+    border-radius: 12px;
+    padding: 25px;
+    margin-bottom: 15px;
+    transition: all 0.2s ease;
+  }
+  
+  .dropzone:hover {
+    border-color: #112240;
+    background-color: #f8fbff;
+  }
+  
+  /* Selected file text */
+  .file-name {
+    color: #1e4d8f;
+    font-weight: 500;
+  }
+  
+  /* Table styling */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.05);
+  }
+  
+  th {
+    background-color: #112240;
+    color: white;
+    padding: 12px;
+  }
+  
+  td {
+    padding: 10px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  
+  tr:hover {
+    background-color: #f8fbff;
+  }
+  
+  /* Compare button */
+  .compare-button {
+    background-color: #1e4d8f;
+    color: white;
+    border: none;
+    padding: 12px 28px;
+    font-size: 1rem;
+  }
+  
+  .compare-button:hover {
+    background-color: #112240;
+  }
+
+  /* Card sections */
+
+.section-card {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 16px rgba(17, 34, 64, 0.08);
+}
+
+/* Compare button area */
+
+.action-bar {
   text-align: center;
+  margin: 30px 0;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+/* Uploaded filenames */
+
+.file-name {
+  margin-left: 10px;
+  color: #1e4d8f;
+  font-weight: 500;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+/* Section titles */
+
+.section-card h2 {
+  margin-top: 0;
+  border-bottom: 2px solid #e5edf8;
+  padding-bottom: 10px;
+  color: #112240;
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+.dropzone {
+  background-color: #f8fbff;
+  border: 2px dashed #4f7cac;
+  border-radius: 12px;
+  padding: 25px;
+  transition: all 0.2s ease;
 }
 
-.App-link {
-  color: #61dafb;
-}
-
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-button {
-  background-color: snow;
-  border-radius: 8%;
-  padding: 1%;
-  margin-left: 1em;
-}
-
-button:hover {
-  background-color: mistyrose;
-}
-
-button:active {
-  background-color: rosybrown;
+.dropzone:hover {
+  background-color: #eef5ff;
+  border-color: #112240;
 }
