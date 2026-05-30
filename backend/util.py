@@ -21,9 +21,17 @@ PAYCOM_COLS = [
 def transform_paycom(df):
     """
     Keep required columns and normalize eecode safely.
+
+    NEW: If column is not present (i.e. "duhm") then fills column with zeroes
     """
-    cols = PAYCOM_COLS
-    df = df.loc[:, cols].copy()
+    df = df.copy()
+
+    missing_cols = [c for c in PAYCOM_COLS if c not in df.columns]
+
+    for col in missing_cols:
+        df[col] = 0
+
+    df = df[PAYCOM_COLS]
 
     df['eecode'] = (
         df['eecode']
@@ -32,13 +40,18 @@ def transform_paycom(df):
         .replace('nan', pd.NA)
     )
 
-    return df
+    return df, missing_cols
 
 def combine_paycom_data(p1, p2):
     """ Take two paycom invoices of the same month and aggregate them into one df """
     # Clean up and normalize data
-    p1 = transform_paycom(p1)
-    p2 = transform_paycom(p2)
+    p1, missing1 = transform_paycom(p1)
+    p2, missing2 = transform_paycom(p2)
+    
+    missing_cols = sorted(set(missing1 + missing2))
+
+    if missing_cols:
+        print(f"Missing payroll columns: {missing_cols}")
 
 
     #TODO: We want to make sure we count up all the eecodes instances.
