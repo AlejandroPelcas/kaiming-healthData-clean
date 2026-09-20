@@ -22,6 +22,38 @@ function FileUpload() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
+  //AI constants
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [asking, setAsking] = useState(false);
+
+  const askOllama = async () => {
+  if (!question.trim()) return;
+  setAsking(true);
+  setAnswer("");
+
+  // try {
+  //   const response = await fetch("http://127.0.0.1:5000/ask-ollama", {
+  //     method: "POST",
+  //     headers: { "Content-Type": "application/json" },
+  //     body: JSON.stringify({
+  //       question,
+  //       context: JSON.stringify({ ptoData, accrualData, mismatches }),
+  //     }),
+  //   });
+
+  //   if (!response.ok) throw new Error("Request failed.");
+
+  //   const data = await response.json();
+  //   setAnswer(data.answer || data.error || "No response.");
+  // } catch (error) {
+  //   console.error("Ollama request failed:", error);
+  //   setAnswer("Something went wrong asking the model.");
+  // } finally {
+  //   setAsking(false);
+  // }
+};
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -182,6 +214,41 @@ function FileUpload() {
           </button>
         </div>
       </form>
+
+{/*       
+        AI Textbox */}
+      
+
+       <section className="section-card">
+        <div className="section-heading">
+          <h2>Ask about the data</h2>
+          <p>Ask a question about the uploaded PTO/accrual data.</p>
+        </div>
+
+        <textarea
+          className="question-input"
+          rows={3}
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          placeholder="e.g. Which employees have PTO mismatches over 5 hours?"
+        />
+
+        <button
+          type="button"
+          className="primary-button"
+          onClick={askOllama}
+          disabled={asking || !question.trim()}
+        >
+          {asking ? "Asking..." : "Ask"}
+        </button>
+
+        {answer && (
+          <div className="answer-box">
+            <strong>Answer:</strong>
+            <p>{answer}</p>
+          </div>
+        )}
+      </section>
 
       <section className="section-card">
         <h2>Mismatches</h2>
