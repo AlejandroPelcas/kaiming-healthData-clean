@@ -6,6 +6,13 @@ from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 import os
 import io
+import requests
+
+### Ollama settings
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/chat")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+MAX_CONTEXT_ROWS = 200  # keeps the prompt from blowing past the model's context window
+
 
 UPLOAD_FOLDER = "uploads"   # ← MUST be defined first
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -152,6 +159,82 @@ def get_data():
     # Convert to list of dicts (JSON serializable)
     data = df.to_dict(orient="records")
     return jsonify(data)
+
+@app.route("/ask-ollama", methods=["POST"])
+def ask_ollama():
+    body = request.get_json(silent=True) or {}
+    question = (body.get("question") or "").strip()
+    context = body.get("context") or {}
+    rows = context.get("mismatches") or []
+
+    if not question:
+        return jsonify({"error": "No question provided."}), 400
+    if not rows:
+        return jsonify({"error": "No comparison data yet. Run 'Compare Files' first."}), 400
+
+    df = pd.DataFrame(rows)
+
+    # Pre-compute totals in pandas, since LLMs are unreliable at arithmetic over many rows
+    diff = (
+        pd.to_numeric(df["difference"], errors="coerce")
+        if "difference" in df.columns
+        else pd.Series(dtype=float)
+    )
+    summary = (
+        f"Total mismatched rows: {len(df)}\n"
+        f"Sum of differences: {diff.sum():.2f}\n"
+        f"Sum of absolute differences: {diff.abs().sum():.2f}\n"
+        f"Largest absolute difference: {diff.abs().max():.2f}"
+        if len(diff) else f"Total mismatched rows: {len(df)}"
+    )
+
+    # Send the biggest discrepancies first if we have to truncate
+    if len(diff):
+        df = df.loc[diff.abs().sort_values(ascending=False).index]
+    csv_data = df.head(MAX_CONTEXT_ROWS).to_csv(index=False)
+    truncated_note = (
+        f"(Showing the {MAX_CONTEXT_ROWS} largest of {len(df)} rows.)\n"
+        if len(df) > MAX_CONTEXT_ROWS else ""
+    )
+
+    system_prompt = (
+        "You are an assistant inside a benefits reconciliation tool. Payroll deductions "
+        "from Paycom are compared against a health provider's invoice. 'payroll' is what was "
+        "deducted, 'Invoice' is what the provider billed, and 'difference' is the gap between them. "
+        "Answer ONLY using the data provided. If the answer isn't in the data, say so. "
+        "Never invent employees or numbers. Be concise."
+    )
+    user_prompt = (
+        f"Period: {context.get('year')} {context.get('month')}\n"
+        f"Provider: {context.get('provider')}  Metric: {context.get('metric')}\n\n"
+        f"Summary:\n{summary}\n\n"
+        f"{truncated_note}Data (CSV):\n{csv_data}\n\n"
+        f"Question: {question}"
+    )
+
+    try:
+        resp = requests.post(
+            OLLAMA_URL,
+            json={
+                "model": OLLAMA_MODEL,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "stream": False,
+                # Ollama's default context window is small and silently truncates long prompts
+                "options": {"temperature": 0.1, "num_ctx": 8192},
+            },
+            timeout=180,
+        )
+        resp.raise_for_status()
+        answer = resp.json()["message"]["content"]
+        return jsonify({"answer": answer})
+
+    except requests.exceptions.ConnectionError:
+        return jsonify({"error": "Can't reach Ollama. Is it running (`ollama serve`)?"}), 503
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"Ollama request failed: {e}"}), 502
 
 if __name__ == "__main__":
     app.run(debug=True)

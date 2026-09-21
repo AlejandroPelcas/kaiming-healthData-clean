@@ -28,31 +28,31 @@ function FileUpload() {
   const [asking, setAsking] = useState(false);
 
   const askOllama = async () => {
-  if (!question.trim()) return;
-  setAsking(true);
-  setAnswer("");
-
-  // try {
-  //   const response = await fetch("http://127.0.0.1:5000/ask-ollama", {
-  //     method: "POST",
-  //     headers: { "Content-Type": "application/json" },
-  //     body: JSON.stringify({
-  //       question,
-  //       context: JSON.stringify({ ptoData, accrualData, mismatches }),
-  //     }),
-  //   });
-
-  //   if (!response.ok) throw new Error("Request failed.");
-
-  //   const data = await response.json();
-  //   setAnswer(data.answer || data.error || "No response.");
-  // } catch (error) {
-  //   console.error("Ollama request failed:", error);
-  //   setAnswer("Something went wrong asking the model.");
-  // } finally {
-  //   setAsking(false);
-  // }
-};
+    if (!question.trim()) return;
+    setAsking(true);
+    setAnswer("");
+  
+    try {
+      const response = await fetch("http://localhost:5000/ask-ollama", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question,
+          context: { mismatches, year, month, provider, metric },
+        }),
+      });
+  
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Request failed.");
+  
+      setAnswer(data.answer || "No response.");
+    } catch (err) {
+      console.error("Ollama request failed:", err);
+      setAnswer(err.message || "Something went wrong asking the model.");
+    } finally {
+      setAsking(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -215,40 +215,39 @@ function FileUpload() {
         </div>
       </form>
 
-{/*       
-        AI Textbox */}
-      
+{/* AI Textbox */}
+        
 
-       <section className="section-card">
-        <div className="section-heading">
-          <h2>Ask about the data</h2>
-          <p>Ask a question about the uploaded PTO/accrual data.</p>
-        </div>
+  <section className="section-card">
+    <div className="section-heading">
+      <h2>Ask about the data</h2>
+      <p>Ask a question about the comparison results below.</p>
+    </div>
 
-        <textarea
-          className="question-input"
-          rows={3}
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder="e.g. Which employees have PTO mismatches over 5 hours?"
-        />
+    <textarea
+      className="question-input"
+      rows={3}
+      value={question}
+      onChange={(e) => setQuestion(e.target.value)}
+      placeholder="e.g. Which employees have the largest differences? What's the total difference?"
+    />
 
-        <button
-          type="button"
-          className="primary-button"
-          onClick={askOllama}
-          disabled={asking || !question.trim()}
-        >
-          {asking ? "Asking..." : "Ask"}
-        </button>
+    <button
+      type="button"
+      className="primary-button"
+      onClick={askOllama}
+      disabled={asking || !question.trim() || mismatches.length === 0}
+    >
+      {asking ? "Asking..." : "Ask"}
+    </button>
 
-        {answer && (
-          <div className="answer-box">
-            <strong>Answer:</strong>
-            <p>{answer}</p>
-          </div>
-        )}
-      </section>
+    {answer && (
+      <div className="answer-box">
+        <strong>Answer:</strong>
+        <p>{answer}</p>
+      </div>
+    )}
+  </section>
 
       <section className="section-card">
         <h2>Mismatches</h2>
