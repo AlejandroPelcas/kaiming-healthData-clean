@@ -10,7 +10,7 @@ import requests
 
 ### Ollama settings
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/chat")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:latest")
 MAX_CONTEXT_ROWS = 200  # keeps the prompt from blowing past the model's context window
 
 

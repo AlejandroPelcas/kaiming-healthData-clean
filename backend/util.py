@@ -1,37 +1,91 @@
+"""
+Reconcile Paycom payroll deductions against benefits-vendor invoices.
+
+Output is logged rather than printed. To see the INFO-level summaries, add this
+once at the top of your script or notebook:
+
+    import logging
+    logging.basicConfig(level=logging.INFO)   # or DEBUG to see full DataFrames
+"""
+import logging
+
 import pandas as pd
 
-PAYCOM_COLS = [
-    'eecode',
-    'eename',
-    'dkrm', 
-    'dcmp', 
-    'duhm', 
-    'dvsn', 
-    'ddnt', 
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+# Paycom deduction codes that get summed and reconciled.
+NUMERIC_COLS = [
+    'dkrm',
+    'dcmp',
+    'duhm',
+    'dvsn',
+    'ddnt',
     'dchi',
-    # Jan 28 - Adding UNUM variables
-    'devl',
-    'deva',
-    'dsvl',
-    'dsva',
-    'dcvl',
-    'dcva',
-    ]
+    # Jan 28 - UNUM deductions
+    'devl',  # EE life
+    'deva',  # EE AD&D
+    'dsvl',  # spouse life
+    'dsva',  # spouse AD&D
+    'dcvl',  # child life
+    'dcva',  # child AD&D
+]
+
+PAYCOM_COLS = ['eecode', 'eename', *NUMERIC_COLS]
+
+# UNUM payroll code -> plan name as it appears on the UNUM invoice.
+UNUM_PLAN_NAMES = {
+    'devl': 'EE LIFE',
+    'deva': 'EE AD&D',
+    'dsvl': 'SP LIFE',
+    'dsva': 'SP AD&D',
+    'dcvl': 'CH LIFE',
+    'dcva': 'CH AD&D',
+}
+
+# Invoice layouts: vendor -> (header rows to skip, column positions, names for those columns)
+VENDOR_LAYOUTS = {
+    'kaiser':      (3, [1, 2, 3, 7], ['eecode', 'last_name', 'first_name', 'EE Deductable']),
+    'united_cchp': (3, [1, 2, 5],    ['eecode', 'eename', 'EE Deductable']),
+    'vision':      (2, [0, 1, 8],    ['eecode', 'eename', 'EE Deductable']),
+    'dental':      (2, [0, 1, 5],    ['eecode', 'eename', 'EE Deductable']),
+    'landmark':    (2, [0, 1, 3],    ['eecode', 'eename', 'EE Deductable']),
+    'unum':        (3, [1, 2, 3, 5], ['eecode', 'eename', 'plan_name', 'EE Deductable']),
+}
+
+# Payroll and invoice amounts within this many dollars count as a match.
+MATCH_TOLERANCE = 0.05
+
+
+# ---------------------------------------------------------------------------
+# Paycom
+# ---------------------------------------------------------------------------
 
 def transform_paycom(df):
     """
-    Keep required columns and normalize eecode safely.
+    Keep the required Paycom columns and normalize them.
 
-    NEW: If column is not present (i.e. "duhm") then fills column with zeroes
+    Any missing column (e.g. 'duhm') is added and filled with 0.
+    Returns (cleaned_df, list_of_missing_columns).
     """
     df = df.copy()
 
     missing_cols = [c for c in PAYCOM_COLS if c not in df.columns]
-
     for col in missing_cols:
         df[col] = 0
 
-    df = df[PAYCOM_COLS]
+    df = df[PAYCOM_COLS].copy()
+
+    # Make sure deduction amounts are numbers so they sum correctly.
+    numeric = df[NUMERIC_COLS].apply(pd.to_numeric, errors='coerce')
+    bad_values = numeric.isna() & df[NUMERIC_COLS].notna()
+    if bad_values.any().any():
+        logger.warning("%d non-numeric payroll value(s) were treated as blank",
+                       int(bad_values.sum().sum()))
+    df[NUMERIC_COLS] = numeric
 
     df['eecode'] = (
         df['eecode']
@@ -42,236 +96,130 @@ def transform_paycom(df):
 
     return df, missing_cols
 
+
 def combine_paycom_data(p1, p2):
-    """ Take two paycom invoices of the same month and aggregate them into one df """
-    # Clean up and normalize data
+    """Combine two Paycom reports for the same month into one row per employee."""
     p1, missing1 = transform_paycom(p1)
     p2, missing2 = transform_paycom(p2)
-    
-    missing_cols = sorted(set(missing1 + missing2))
 
+    missing_cols = sorted(set(missing1) | set(missing2))
     if missing_cols:
-        print(f"Missing payroll columns: {missing_cols}")
+        logger.warning("Missing payroll columns (filled with 0): %s", missing_cols)
 
+    agg_map = {'eename': 'first', **{col: 'sum' for col in NUMERIC_COLS}}
 
-    #TODO: We want to make sure we count up all the eecodes instances.
-    # aggregate duplicates per employee 
-    agg_map = {
-    'eename': 'first',   # names should be consistent
-    'dkrm': 'sum',
-    'dcmp': 'sum',
-    'duhm': 'sum',
-    'dvsn': 'sum',
-    'ddnt': 'sum',
-    'dchi': 'sum',
-    # Jan 28 - Adding UNUM variables
-    'devl': 'sum',
-    'deva': 'sum',
-    'dsvl': 'sum',
-    'dsva': 'sum',
-    'dcvl': 'sum',
-    'dcva': 'sum',
-    }
-
-    p1 = (
-    p1
-    .groupby('eecode', as_index=True)
-    .agg(agg_map)
-    )
-
-    p2 = (
-        p2
-        .groupby('eecode', as_index=True)
+    # Stack both reports, then total every deduction per employee in one pass.
+    paycom_master = (
+        pd.concat([p1, p2], ignore_index=True)
+        .groupby('eecode', as_index=False)
         .agg(agg_map)
     )
 
-    # add numeric columns safely ---
-    numeric_cols = [
-        'dkrm', 
-        'dcmp', 
-        'duhm', 
-        'dvsn', 
-        'ddnt', 
-        'dchi',
-        # Jan 28 - Adding UNUM variables
-        'devl',
-        'deva',
-        'dsvl',
-        'dsva',
-        'dcvl',
-        'dcva',
-        ]
-
-    paycom_master = p1.copy()
-
-    paycom_master[numeric_cols] = (
-        p1[numeric_cols]
-        .add(p2[numeric_cols], fill_value=0)
-    )
-    paycom_master = paycom_master.reset_index()
-    print("--------- Outputing cleaned paycom---------")
+    logger.info("Combined Paycom data: %d employees", len(paycom_master))
     return paycom_master
 
-def transform_healthcare(df, vendor: str, unumType: str):
+
+# ---------------------------------------------------------------------------
+# Vendor invoices
+# ---------------------------------------------------------------------------
+
+def transform_healthcare(df, vendor: str, unumType: str | None = None):
     """
-    Transform healthcare data for different vendors into a consistent format.
+    Transform a vendor invoice into a consistent format, one row per employee.
+
     Output columns: ['eecode', 'eename', 'EE Deductable']
+    For vendor='unum', unumType (e.g. 'devl') selects which plan to keep.
     """
-    df = df.copy()
+    vendor = vendor.lower()
+    if vendor not in VENDOR_LAYOUTS:
+        raise ValueError(f"Vendor must be one of {sorted(VENDOR_LAYOUTS)}, got {vendor!r}")
 
-    payroll_code_map = {
-    'devl' : 'EE LIFE',
-    'deva' : 'EE AD&D',
-    'dsvl' : 'SP LIFE',
-    'dsva' : 'SP AD&D',
-    'dcvl' : 'CH LIFE',
-    'dcva' : 'CH AD&D',
-}
-    
-    if vendor.lower() == 'kaiser':
-        df = df[3:].copy()
-        # Columns: EE Code [1], Last Name [2], First Name [3], EE Deduction [7]
-        df = df.iloc[:, [1, 2, 3, 7]]
-        df.columns = ['eecode', 'Last Name', 'First Name', 'EE Deductable']
-        df['eename'] = df['First Name'].str.strip() + ' ' + df['Last Name'].str.strip()
-    
-    elif vendor.lower() == 'united_cchp':
-        df = df[3:].copy()
-        # Columns: EEID [1], Name [2], EE Deductable [5]
-        df = df.iloc[:, [1, 2, 5]]
-        df.columns = ['eecode', 'eename', 'EE Deductable']
+    skip_rows, col_positions, col_names = VENDOR_LAYOUTS[vendor]
+    df = df.iloc[skip_rows:, col_positions].copy()
+    df.columns = col_names
 
-    elif vendor.lower() == 'vision':
-        df = df[2:].copy()
-        # Columns: eecode[0], name[1], ee deduct vision[8]
-        df = df.iloc[:, [0, 1, 8]]
-        df.columns = ['eecode', 'name', 'EE Deductable']
-        df['eename'] = df['name'].str.strip()  # standardize column
-        df = df[['eecode', 'eename', 'EE Deductable']]
+    if vendor == 'kaiser':
+        df['eename'] = df['first_name'].str.strip() + ' ' + df['last_name'].str.strip()
 
-    elif vendor.lower() == 'dental':
-        df = df[2:].copy()
-        # Columns: eecode[0], name[1], ee deduct dental[5]
-        df = df.iloc[:, [0, 1, 5]]
-        df.columns = ['eecode', 'name', 'EE Deductable']
-        df['eename'] = df['name'].str.strip()  # standardize column
-        df = df[['eecode', 'eename', 'EE Deductable']]
+    elif vendor == 'unum':
+        if unumType not in UNUM_PLAN_NAMES:
+            raise ValueError(
+                f"For UNUM, unumType must be one of {sorted(UNUM_PLAN_NAMES)}, got {unumType!r}"
+            )
+        logger.info("UNUM invoice: keeping plan %r (%s)", UNUM_PLAN_NAMES[unumType], unumType)
+        df = df[df['plan_name'] == UNUM_PLAN_NAMES[unumType]]
 
-    elif vendor.lower() == 'landmark':
-        df = df[2:].copy()
-        df = df.iloc[:,[0,1,3]] # [eecode , name, EE Deduction]
-        df.columns = ['eecode','name','EE Deductable']
-        df['eename'] = df['name'].str.strip()  # standardize column
-        df = df[['eecode', 'eename', 'EE Deductable']]
+    df['eename'] = df['eename'].str.strip()
 
-    elif vendor.lower() == 'unum':
-        print("Vendor is ", vendor.lower(), "and unumtype is ", unumType)
-        df = df[3:].copy() # remove top 3 rows because they're not data
-        df = df.iloc[:, [1,2,3,5]] # [eeid, name, plan_name, amount]
-        df.columns = ['eecode', 'name', 'plan_name', 'EE Deductable']
-        df['eename'] = df['name'].str.strip()  # rename 'name' to 'eename'
-        df = df[df['plan_name'] == payroll_code_map[unumType]] #maps the plan_name to correct payroll code for spliting dataset
-        df = df[['eecode', 'eename', 'EE Deductable']]
-
-        df = df.dropna(subset=['eecode']) #There's NaN rows to seperate people, remove those dead rows
-
-    else:
-        raise ValueError("Vendor must be 'kaiser', 'united_cchp', 'vision', 'landmark', 'dental', or 'unum'")
-
-    # Drop rows with missing eecode
+    # Blank eecode rows are separators/headers, not employees.
     df = df.dropna(subset=['eecode'])
     df['eecode'] = df['eecode'].astype(str).str.strip()
     df['EE Deductable'] = pd.to_numeric(df['EE Deductable'], errors='coerce')
-    # df = df.drop_duplicates() #TODO: NEED TO CHANGE THIS TO AGGREGATE DUPLICATES NOT DROP THEM
-    print("Columns before groupby:", df.columns)
+
+    # Total any duplicate lines per employee (rather than dropping them).
     df = (
         df
-        .groupby("eecode", as_index=False)
-        .agg({
-            'EE Deductable': 'sum',
-            'eename': 'first',   # or 'last'
-        })
+        .groupby('eecode', as_index=False)
+        .agg({'eename': 'first', 'EE Deductable': 'sum'})
     )
-    df['EE Deductable'] = df['EE Deductable'].round(2) # only take in hundredths place
+    df['EE Deductable'] = df['EE Deductable'].round(2)
 
-    print("Columns after groupby:", df.columns)
-
-
-    return df.reset_index(drop=True)
+    logger.debug("Transformed %s invoice:\n%s", vendor, df)
+    return df
 
 
-def create_comparison_df(df_1, df_2, col, unumType):
-    comparison = df_1.merge(
-        df_2,
-        on='eecode',
-        how='outer',
-        suffixes=('_df1', '_df2')
-    )
-    print("Comparison\n", comparison)
-    # If we're doing unumType, that is the metric
-    if unumType and col == 'unum':
+# ---------------------------------------------------------------------------
+# Comparison
+# ---------------------------------------------------------------------------
+
+def create_comparison_df(df_1, df_2, col, unumType=None):
+    """
+    Compare a payroll column in df_1 (Paycom) against 'EE Deductable' in df_2 (invoice).
+
+    Returns only the mismatched rows, with difference = PAYROLL - INVOICE.
+    Pass col='unum' together with unumType to compare a specific UNUM code.
+    """
+    if col == 'unum':
+        if not unumType:
+            raise ValueError("unumType is required when col='unum'")
         col = unumType
-    print("Unumtype and col:", unumType, col)
-    # EE Deducition is object not float. Change that
-    comparison.columns = comparison.columns.str.strip() # Removes trailing white space
-    print("Comparison Columns: [", comparison.columns,"]")
-    comparison["EE Deductable"] = pd.to_numeric(comparison["EE Deductable"], errors="coerce")
-    comparison[col] = pd.to_numeric(comparison[col], errors="coerce").fillna(0)
 
-    # Create match column that is a boolean
-    comparison["match"] = (
-        (comparison[col] == comparison["EE Deductable"])  |
-        (comparison[col].isna() & comparison["EE Deductable"].isna())  |
-        (comparison[col].fillna(0.0) == comparison["EE Deductable"].fillna(0.0))  
+    comparison = df_1.merge(df_2, on='eecode', how='outer', suffixes=('_df1', '_df2'))
+    comparison.columns = comparison.columns.str.strip()
+    logger.debug("Comparison for %s:\n%s", col, comparison)
+
+    comparison[col] = pd.to_numeric(comparison[col], errors='coerce').fillna(0)
+    comparison['EE Deductable'] = pd.to_numeric(comparison['EE Deductable'], errors='coerce')
+
+    # PAYROLL - INVOICE = DIFFERENCE (anyone missing from a side counts as 0 there)
+    comparison['difference'] = (
+        comparison[col] - comparison['EE Deductable'].fillna(0)
+    ).round(2)
+    comparison['match'] = comparison['difference'].abs() < MATCH_TOLERANCE
+
+    output_cols = ['eecode', col, 'EE Deductable', 'difference']
+    if 'eename_df1' in comparison:
+        # Prefer the Paycom name; fall back to the invoice name for people not in payroll.
+        comparison['Name'] = comparison['eename_df1'].fillna(comparison['eename_df2'])
+        output_cols.append('Name')
+
+    mismatches = (
+        comparison.loc[~comparison['match'], output_cols]
+        .rename(columns={'EE Deductable': 'Invoice'})
     )
 
-    # Show difference if any between paycom and provider
-    # PAYROLL - INVOICE = DIFFERENCE
-    comparison["difference"] = (
-    comparison[col].fillna(0) - comparison["EE Deductable"].fillna(0)
-    ).round(2)
-    #print((comparison[col][comparison[col] > 0])) # this is a Series
-
-    # Update match column to ignore tiny differences (<0.05)
-    comparison["match"] = comparison["match"] | (comparison["difference"].abs() < 0.05)
-
-    # Filter rows where match is False and print
-    # Filter mismatches
-
-    columns = ['eecode',col,"EE Deductable", 'difference']
-    if col in ['duhm']:
-        columns.append('eename_df1')
-    elif col in ['dvsn', 'ddnt', 'dkrm','dcmp', 'dchi', 'devl','deva','dsvl','dsva','dcvl','dcva']:
-        columns.append('eename_df1')
-
-
-    mismatches = comparison.loc[~comparison['match'], columns]
-
-    mismatches = mismatches.rename(columns={'eename_df1': 'Name', 'EE Deductable': 'Invoice',})
-    # Set the column order 
-    print("Mismatch ONE: ", mismatches)
-    # Print list of eecodes with mismatches
-    print(f"There are mismatches for eecode(s): {mismatches['eecode'].tolist()}")
-    
-    # Sum the variance per eecode
-    variance_per_eecode = mismatches.groupby('eecode')['difference'].sum().round(2)
-    
-    # Print nicely
-    for ee, var in variance_per_eecode.items():
-        print(f"Total variance for eecode {ee}: {var}")
-
+    if mismatches.empty:
+        logger.info("%s: no mismatches", col)
+    else:
+        logger.info("%s: %d mismatch(es), net variance %.2f",
+                    col, len(mismatches), mismatches['difference'].sum())
+        for eecode, diff in zip(mismatches['eecode'], mismatches['difference']):
+            logger.info("  eecode %s: variance %.2f", eecode, diff)
 
     return mismatches
 
+
 def create_name_map(health_data_transformed):
-    return (
-        health_data_transformed
-        .assign(
-            eecode=health_data_transformed["eecode"].astype(str),
-            Name=health_data_transformed["eename"].astype(str).str.strip()
-        )
-        .set_index("eecode")["Name"]
-        .to_dict()
-    )
-
-
+    """Return {eecode: name} from a transformed invoice DataFrame."""
+    df = health_data_transformed
+    return dict(zip(df['eecode'].astype(str), df['eename'].astype(str).str.strip()))
