@@ -1,164 +1,299 @@
-#@Author: Alejandro Pelcastre
-import pandas as pd
-import numpy as np
-from util import transform_paycom, transform_healthcare, create_comparison_df, combine_paycom_data, create_name_map
-from flask import Flask, request, jsonify, send_file, send_from_directory
-from flask_cors import CORS
-import os
-import io
-import requests
+# @Author: Alejandro Pelcastre
+"""
+Flask backend for the Kai Ming benefits reconciliation tool.
 
-### Ollama settings
+Monthly workflow:
+  1. POST /api/payroll   Upload the two Paycom check registers for a month (saved once).
+  2. POST /api/compare   Upload one provider invoice; it's compared against that
+                         month's saved payroll. Repeat for each provider.
+  3. GET  /api/...       Read saved results for the dashboard.
+
+POST /upload still accepts all three files at once so the current frontend keeps working.
+"""
+import json
+import logging
+import os
+from datetime import datetime, timezone
+
+import pandas as pd
+import requests
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+
+import db
+from util import (
+    NUMERIC_COLS,
+    compare_payroll_to_invoice,
+    find_repeat_offenders,
+    paycom_by_period,
+    summarize_comparison,
+    transform_healthcare,
+)
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger("app")
+
+# Ollama settings
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/chat")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:latest")
 MAX_CONTEXT_ROWS = 200  # keeps the prompt from blowing past the model's context window
 
+# Only these origins may call the API from a browser. The database now holds
+# employee data, so any website you visit shouldn't be able to read it from
+# localhost:5000 (the old CORS(app) allowed exactly that).
+FRONTEND_ORIGINS = os.environ.get(
+    "FRONTEND_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173",
+).split(",")
 
-UPLOAD_FOLDER = "uploads"   # ← MUST be defined first
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app = Flask(__name__, static_folder="frontend/build", static_url_path="")
+CORS(app, origins=FRONTEND_ORIGINS)
+db.init_db()
 
-app = Flask(
-    __name__,
-    static_folder="frontend/build",
-    static_url_path=""
-)
 
 @app.before_request
 def log_every_request():
-    print(
-        f"REQUEST: {request.method} {request.path}",
-        flush=True
+    logger.info("REQUEST: %s %s", request.method, request.path)
+
+
+# ---------------------------------------------------------------------------
+# Errors
+# ---------------------------------------------------------------------------
+
+class InputError(Exception):
+    """A problem with what the user sent. Returned to the browser as a 400."""
+
+
+@app.errorhandler(InputError)
+def handle_input_error(err):
+    return jsonify({"error": str(err)}), 400
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+MONTH_ABBRS = ["jan", "feb", "mar", "apr", "may", "jun",
+               "jul", "aug", "sep", "oct", "nov", "dec"]
+
+
+def parse_period(year, month):
+    """
+    Turn the year and month the user picked into integers (month 1-12).
+    Accepts month as 'January', 'Jan', '1' or '01'.
+    """
+    year, month = (year or "").strip(), (month or "").strip()
+    if not year or not month:
+        raise InputError("Please select the year and month first.")
+    if not year.isdigit():
+        raise InputError(f"{year!r} isn't a valid year.")
+    if month.isdigit() and 1 <= int(month) <= 12:
+        return int(year), int(month)
+    if month[:3].lower() in MONTH_ABBRS:
+        return int(year), MONTH_ABBRS.index(month[:3].lower()) + 1
+    raise InputError(f"{month!r} isn't a recognizable month.")
+
+
+def resolve_metric(provider, metric, unum_type):
+    """The Paycom deduction code to compare, e.g. 'dvsn' or, for UNUM, 'devl'."""
+    if not provider:
+        raise InputError("Please select a health provider.")
+    code = unum_type if provider == "unum" else metric
+    if provider == "unum" and not code:
+        raise InputError("Please select a UNUM type.")
+    if code not in NUMERIC_COLS:
+        raise InputError(f"Unknown payroll code {code!r} for provider {provider!r}.")
+    return code
+
+
+def now_utc():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def df_to_records(df):
+    """DataFrame -> JSON-safe list of dicts (NaN becomes null, numpy types become Python)."""
+    return json.loads(df.to_json(orient="records")) if not df.empty else []
+
+
+def read_invoice_sheet(file, sheet_name):
+    xls = pd.ExcelFile(file)
+    if sheet_name not in xls.sheet_names:
+        raise InputError(
+            f"No sheet named '{sheet_name}' in {file.filename}. "
+            f"Sheets found: {', '.join(xls.sheet_names)}"
+        )
+    return pd.read_excel(xls, sheet_name)
+
+
+def save_payroll_files(year, month, paycom1, paycom2):
+    payroll, missing = paycom_by_period(pd.read_excel(paycom1), pd.read_excel(paycom2))
+    db.save_payroll(year, month, payroll, paycom1.filename, paycom2.filename)
+    return {**db.get_payroll_upload(year, month), "missing_columns": missing}
+
+
+def run_comparison(year, month, sheet_name, provider, metric_code, health_file):
+    """Compare an invoice against the month's saved payroll, store it, return the run id."""
+    if db.get_payroll_upload(year, month) is None:
+        raise InputError(
+            f"No Paycom data saved for {month}/{year} yet. "
+            "Upload the Paycom check registers for this month first."
+        )
+
+    invoice_raw = read_invoice_sheet(health_file, sheet_name)
+    try:
+        invoice = transform_healthcare(invoice_raw, vendor=provider, unumType=metric_code)
+    except (ValueError, KeyError, IndexError, AttributeError) as err:
+        raise InputError(
+            f"Couldn't read this file as a {provider} invoice ({err}). "
+            "Check that the right provider is selected."
+        ) from err
+
+    rows = compare_payroll_to_invoice(db.load_payroll(year, month, metric_code), invoice)
+    summary = summarize_comparison(rows)
+    summary.update(
+        year=year, month=month, provider=provider, metric=metric_code,
+        invoice_file=health_file.filename, run_at=now_utc(),
     )
+    return db.save_run(summary, rows)
 
-print("LOADED APP.PY", __file__)
 
-CORS(app) # allow all origins for simplicity
-"""
-Load the data in. Expect input to be in .xlsx format
-Each Excel file has multiple sheets, to select the one we want, first load using xls = pd.ExcelFile('data.xlsx')
-Then use pd.read_excel(xls, 'name_of_sheet') to get sheet data from each dataset
-"""
+def run_payload(run_id, include_all=False):
+    return {
+        "run": db.get_run(run_id),
+        "rows": db.get_run_rows(run_id, mismatches_only=not include_all),
+    }
 
+
+# ---------------------------------------------------------------------------
+# Frontend
+# ---------------------------------------------------------------------------
 
 @app.route("/")
 def index():
-    print("hi")
     return send_from_directory(app.static_folder, "index.html")
 
-@app.route("/receive-date")
-def receive_date():
-    data = request.get_json() # gets the data from update YY_MM buttons
 
-    year = data.get("year")
-    month = data.get("month")
+# ---------------------------------------------------------------------------
+# Monthly workflow
+# ---------------------------------------------------------------------------
 
-    print(f"Updated year -> {year} and month -> {month}")
+@app.route("/api/payroll", methods=["GET"])
+def payroll_status():
+    """Whether Paycom data is already saved for a month: ?year=2026&month=3"""
+    year, month = parse_period(request.args.get("year"), request.args.get("month"))
+    upload = db.get_payroll_upload(year, month)
+    return jsonify({"year": year, "month": month, "uploaded": upload is not None, **(upload or {})})
 
-    return jsonify({"status" : "updated"})
 
-@app.route("/upload", methods=["POST", "OPTIONS"])
+@app.route("/api/payroll", methods=["POST"])
+def upload_payroll():
+    """Save a month's Paycom registers. Form fields: year, month, paycom1, paycom2."""
+    year, month = parse_period(request.form.get("year"), request.form.get("month"))
+    paycom1 = request.files.get("paycom1")
+    paycom2 = request.files.get("paycom2")
+    if not paycom1 or not paycom2:
+        raise InputError("Please upload both Paycom check registers.")
+    return jsonify(save_payroll_files(year, month, paycom1, paycom2))
+
+
+@app.route("/api/compare", methods=["POST"])
+def compare():
+    """
+    Compare one invoice against saved payroll.
+    Form fields: year, month, provider, metric, unumType, health.
+    Returns {"run": summary, "rows": mismatched rows}.
+    """
+    year_raw, month_raw = request.form.get("year"), request.form.get("month")
+    year, month = parse_period(year_raw, month_raw)
+    provider = (request.form.get("provider") or "").lower()
+    metric_code = resolve_metric(provider, request.form.get("metric"), request.form.get("unumType"))
+    health = request.files.get("health")
+    if not health:
+        raise InputError("Please upload the provider invoice.")
+
+    sheet_name = f"{year_raw.strip()} {month_raw.strip()}"
+    run_id = run_comparison(year, month, sheet_name, provider, metric_code, health)
+    return jsonify(run_payload(run_id))
+
+
+@app.route("/upload", methods=["POST"])
 def upload_files():
+    """
+    Legacy one-shot endpoint used by the current frontend: saves payroll and the
+    comparison, then returns mismatches in the original shape
+    (eecode, <payroll code>, Invoice, difference, Name).
+    """
+    year_raw, month_raw = request.form.get("year"), request.form.get("month")
+    year, month = parse_period(year_raw, month_raw)
+    provider = (request.form.get("provider") or "").lower()
+    metric_code = resolve_metric(provider, request.form.get("metric"), request.form.get("unumType"))
 
-    print("\n========== /upload HIT ==========")
-    print("Method:", request.method)
-
-    if request.method == "OPTIONS":
-        print("OPTIONS PREFLIGHT RECEIVED")
-        return "", 200
-    print("Uploading files ....")
-    # Access files by the SAME names used in FormData
     paycom1 = request.files.get("paycom1")
     paycom2 = request.files.get("paycom2")
     health = request.files.get("health")
-
-    year = request.form.get("year")
-    month = request.form.get("month")
-    provider = request.form.get("provider")
-    metric = request.form.get("metric")
-
-    unumType = request.form.get("unumType")
-
-    date = year + ' ' + month
-
-    if not month or not year:
-        raise Exception("Please select the Year and Month first")
-
-    if not provider:
-        raise Exception("Please select a Health Provider")
-
-    # Validation
     if not paycom1 or not paycom2 or not health:
-        return jsonify({"error": "Missing file(s)"}), 400
+        raise InputError("Missing file(s).")
+
+    save_payroll_files(year, month, paycom1, paycom2)
+    sheet_name = f"{year_raw.strip()} {month_raw.strip()}"
+    run_id = run_comparison(year, month, sheet_name, provider, metric_code, health)
+
+    return jsonify([
+        {
+            "eecode": row["eecode"],
+            metric_code: row["payroll"],
+            "Invoice": row["invoice"],
+            "difference": row["difference"],
+            "Name": row["name"],
+        }
+        for row in db.get_run_rows(run_id)
+    ])
 
 
-    # Merge Paycom stubs with desired metrics 
-    paycom_cleaned = combine_paycom_data(pd.read_excel(paycom1), pd.read_excel(paycom2))
+# ---------------------------------------------------------------------------
+# Dashboard data
+# ---------------------------------------------------------------------------
 
-    # Save DataFrame to in-memory Excel file
-    output = io.BytesIO()
-    paycom_cleaned.to_excel(output, index=False)
-    output.seek(0)  # rewind the buffer
+@app.route("/api/runs")
+def list_runs():
+    """
+    Run summaries, oldest first. Optional filters: year, month, provider, metric.
+    With no filters this is the full history for trend charts.
+    """
+    return jsonify(db.list_runs(
+        year=request.args.get("year", type=int),
+        month=request.args.get("month", type=int),
+        provider=request.args.get("provider"),
+        metric=request.args.get("metric"),
+    ))
 
-    # Transform healthcare data (example: vendor="kaiser")
-    df_health = pd.read_excel(health, date) #TODO: THE DATE NEEDS TO BE INFERED OR ASKED NOT HARD WIRED <DONE: it's chosen by user>
-    df_health_transformed = transform_healthcare(df_health, vendor=provider, unumType=unumType)
 
-    # Compare Paycom vs healthcare
-    data = create_comparison_df(paycom_cleaned, df_health_transformed, col=metric, unumType=unumType)
+@app.route("/api/runs/<int:run_id>")
+def run_detail(run_id):
+    """One run's summary and rows. Add ?include=all to get matched rows too."""
+    if db.get_run(run_id) is None:
+        return jsonify({"error": "Run not found."}), 404
+    return jsonify(run_payload(run_id, include_all=request.args.get("include") == "all"))
 
-    # Keep only rows where match == False
-    mismatches = data
 
-    print("The data:", mismatches)
-    name_map = create_name_map(paycom_cleaned)   # <-- use the original dataset
+@app.route("/api/repeat-offenders")
+def repeat_offenders():
+    """
+    Employees mismatched in consecutive months.
+    Optional filters: provider, metric, min_months (default 2).
+    """
+    provider = request.args.get("provider")
+    metric = request.args.get("metric")
+    min_months = request.args.get("min_months", default=2, type=int)
 
-    # Return the full comparison as JSON - orient records creates a list of dictionaries
-    # Replace all NaN/inf values with None
-    # 1. Normalize types
-    mismatches["eecode"] = mismatches["eecode"].astype(str)
-    name_map = create_name_map(df_health_transformed)
+    history = db.load_mismatch_history(provider=provider, metric=metric)
+    runs = pd.DataFrame(db.list_runs(provider=provider, metric=metric))
+    return jsonify(df_to_records(find_repeat_offenders(history, runs, min_streak=min_months)))
 
-    # 2. Fill missing names using pandas NaN
-    mismatches["Name"] = (
-        mismatches["Name"]
-        .fillna(mismatches["eecode"].map(name_map))
-    )
 
-    # 3. ONLY at the end (if required for JSON)
-    mismatches = mismatches.replace({np.nan: None, np.inf: None, -np.inf: None})
-
-    # This makes it so names are never empty even if payroll is 0 or NaN
-    # Apply the mapping
-   # print("Name MAP", name_map)
-    mismatches['Name'] = (
-        mismatches['eecode']
-        .map(name_map)
-        .fillna(mismatches['Name'])  # preserve existing names
-    )
-
-    mismatches["Name"] = (
-        mismatches["Name"]
-        .fillna(mismatches["eecode"].map(name_map))
-    )
-
-    mismatches = mismatches.replace({np.nan: None, np.inf: None, -np.inf: None})
-
-    print("The data AFTER NAME ADD:", mismatches)
-
-    # Convert to list of dicts for JSON
-    records = mismatches.to_dict(orient="records")
-    
-    print("Final backend result:\n", records)
-    return jsonify(records)
-
-@app.route("/get-data")
-def get_data():
-    # Example DataFrame
-    df = upload_files()
-    
-    # Convert to list of dicts (JSON serializable)
-    data = df.to_dict(orient="records")
-    return jsonify(data)
+# ---------------------------------------------------------------------------
+# Ask the local model
+# ---------------------------------------------------------------------------
 
 @app.route("/ask-ollama", methods=["POST"])
 def ask_ollama():
@@ -235,6 +370,7 @@ def ask_ollama():
         return jsonify({"error": "Can't reach Ollama. Is it running (`ollama serve`)?"}), 503
     except requests.exceptions.RequestException as e:
         return jsonify({"error": f"Ollama request failed: {e}"}), 502
+
 
 if __name__ == "__main__":
     app.run(debug=True)

@@ -1,14 +1,15 @@
 """
 Reconcile Paycom payroll deductions against benefits-vendor invoices.
 
-Output is logged rather than printed. To see the INFO-level summaries, add this
-once at the top of your script or notebook:
+Output is logged rather than printed. app.py turns on INFO-level logging;
+in a notebook, add:
 
     import logging
     logging.basicConfig(level=logging.INFO)   # or DEBUG to see full DataFrames
 """
 import logging
 
+import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,34 @@ VENDOR_LAYOUTS = {
 # Payroll and invoice amounts within this many dollars count as a match.
 MATCH_TOLERANCE = 0.05
 
+# Mismatch categories stored with each comparison row.
+MISMATCH_TYPES = {
+    'match':        'Match',
+    'amount_diff':  'Amounts differ',
+    'payroll_only': 'Deducted, not billed',
+    'invoice_only': 'Billed, not deducted',
+}
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+def normalize_eecode(series):
+    """
+    Make employee codes comparable across files and months.
+
+    Excel sometimes reads codes as numbers, so 1234 arrives as "1234.0".
+    This strips whitespace and any trailing ".0", and turns blanks into NA.
+    """
+    codes = (
+        series
+        .astype('string')
+        .str.strip()
+        .str.replace(r'\.0+$', '', regex=True)
+    )
+    return codes.mask(codes.isin(['', 'nan', 'None', '<NA>']))
+
 
 # ---------------------------------------------------------------------------
 # Paycom
@@ -87,18 +116,19 @@ def transform_paycom(df):
                        int(bad_values.sum().sum()))
     df[NUMERIC_COLS] = numeric
 
-    df['eecode'] = (
-        df['eecode']
-        .astype('string')
-        .str.strip()
-        .replace('nan', pd.NA)
-    )
+    df['eecode'] = normalize_eecode(df['eecode'])
 
     return df, missing_cols
 
 
-def combine_paycom_data(p1, p2):
-    """Combine two Paycom reports for the same month into one row per employee."""
+def paycom_by_period(p1, p2):
+    """
+    Combine the two half-month Paycom registers, keeping each pay period's amount.
+
+    Returns (payroll, missing_cols), where payroll is one row per employee per
+    deduction code with columns: eecode, eename, code, amount_p1, amount_p2.
+    Rows where both periods are zero are left out.
+    """
     p1, missing1 = transform_paycom(p1)
     p2, missing2 = transform_paycom(p2)
 
@@ -107,16 +137,32 @@ def combine_paycom_data(p1, p2):
         logger.warning("Missing payroll columns (filled with 0): %s", missing_cols)
 
     agg_map = {'eename': 'first', **{col: 'sum' for col in NUMERIC_COLS}}
-
-    # Stack both reports, then total every deduction per employee in one pass.
-    paycom_master = (
-        pd.concat([p1, p2], ignore_index=True)
-        .groupby('eecode', as_index=False)
-        .agg(agg_map)
+    stacked = pd.concat(
+        [
+            p1.groupby('eecode', as_index=False).agg(agg_map).assign(period=1),
+            p2.groupby('eecode', as_index=False).agg(agg_map).assign(period=2),
+        ],
+        ignore_index=True,
     )
+    names = stacked.groupby('eecode')['eename'].first()
 
-    logger.info("Combined Paycom data: %d employees", len(paycom_master))
-    return paycom_master
+    payroll = (
+        stacked
+        .melt(id_vars=['eecode', 'period'], value_vars=NUMERIC_COLS,
+              var_name='code', value_name='amount')
+        .pivot_table(index=['eecode', 'code'], columns='period', values='amount',
+                     aggfunc='sum', fill_value=0)
+        .reindex(columns=[1, 2], fill_value=0)
+        .rename(columns={1: 'amount_p1', 2: 'amount_p2'})
+        .reset_index()
+    )
+    payroll.columns.name = None
+    payroll = payroll[(payroll['amount_p1'] != 0) | (payroll['amount_p2'] != 0)].copy()
+    payroll[['amount_p1', 'amount_p2']] = payroll[['amount_p1', 'amount_p2']].round(2)
+    payroll['eename'] = payroll['eecode'].map(names)
+
+    logger.info("Combined Paycom data: %d employees", payroll['eecode'].nunique())
+    return payroll[['eecode', 'eename', 'code', 'amount_p1', 'amount_p2']].reset_index(drop=True), missing_cols
 
 
 # ---------------------------------------------------------------------------
@@ -147,13 +193,13 @@ def transform_healthcare(df, vendor: str, unumType: str | None = None):
                 f"For UNUM, unumType must be one of {sorted(UNUM_PLAN_NAMES)}, got {unumType!r}"
             )
         logger.info("UNUM invoice: keeping plan %r (%s)", UNUM_PLAN_NAMES[unumType], unumType)
-        df = df[df['plan_name'] == UNUM_PLAN_NAMES[unumType]]
+        df = df[df['plan_name'] == UNUM_PLAN_NAMES[unumType]].copy()
 
     df['eename'] = df['eename'].str.strip()
 
     # Blank eecode rows are separators/headers, not employees.
+    df['eecode'] = normalize_eecode(df['eecode'])
     df = df.dropna(subset=['eecode'])
-    df['eecode'] = df['eecode'].astype(str).str.strip()
     df['EE Deductable'] = pd.to_numeric(df['EE Deductable'], errors='coerce')
 
     # Total any duplicate lines per employee (rather than dropping them).
@@ -172,12 +218,160 @@ def transform_healthcare(df, vendor: str, unumType: str | None = None):
 # Comparison
 # ---------------------------------------------------------------------------
 
+def compare_payroll_to_invoice(payroll, invoice):
+    """
+    Compare one deduction code's payroll against a transformed invoice.
+
+    payroll: eecode, eename, amount_p1, amount_p2   (from db.load_payroll)
+    invoice: eecode, eename, EE Deductable          (from transform_healthcare)
+
+    Returns every employee on either side, largest difference first, with:
+      eecode, name, payroll, payroll_p1, payroll_p2, invoice,
+      difference (PAYROLL - INVOICE), mismatch_type, one_paycheck
+    """
+    payroll = payroll.assign(eecode=payroll['eecode'].astype(str))
+    invoice = invoice.assign(eecode=invoice['eecode'].astype(str))
+
+    df = payroll.merge(invoice, on='eecode', how='outer', suffixes=('_payroll', '_invoice'))
+
+    df['payroll_p1'] = df['amount_p1'].fillna(0)
+    df['payroll_p2'] = df['amount_p2'].fillna(0)
+    df['payroll'] = (df['payroll_p1'] + df['payroll_p2']).round(2)
+    df['invoice'] = df['EE Deductable']
+    df['difference'] = (df['payroll'] - df['invoice'].fillna(0)).round(2)
+    # Prefer the Paycom name; fall back to the invoice name for people not in payroll.
+    df['name'] = df['eename_payroll'].fillna(df['eename_invoice'])
+
+    matched = df['difference'].abs() < MATCH_TOLERANCE
+    no_payroll = df['payroll'].abs() < MATCH_TOLERANCE
+    no_invoice = df['invoice'].fillna(0).abs() < MATCH_TOLERANCE
+    df['mismatch_type'] = np.select(
+        [matched, no_invoice, no_payroll],
+        ['match', 'payroll_only', 'invoice_only'],
+        default='amount_diff',
+    )
+
+    # A difference equal to one pay period's deduction usually means a missed
+    # or doubled deduction on one of the two check registers.
+    candidates = pd.concat(
+        [df['payroll_p1'].abs(), df['payroll_p2'].abs(), (df['invoice'].fillna(0) / 2).abs()],
+        axis=1,
+    )
+    near_one_period = (
+        (candidates.sub(df['difference'].abs(), axis=0).abs() < MATCH_TOLERANCE)
+        & (candidates >= MATCH_TOLERANCE)
+    ).any(axis=1)
+    df['one_paycheck'] = (df['mismatch_type'] == 'amount_diff') & near_one_period
+
+    columns = ['eecode', 'name', 'payroll', 'payroll_p1', 'payroll_p2',
+               'invoice', 'difference', 'mismatch_type', 'one_paycheck']
+    df = df[columns]
+    return df.loc[df['difference'].abs().sort_values(ascending=False).index].reset_index(drop=True)
+
+
+def summarize_comparison(rows):
+    """Headline numbers for one comparison (output of compare_payroll_to_invoice)."""
+    mismatched = rows[rows['mismatch_type'] != 'match']
+    summary = {
+        'employees_compared': int(len(rows)),
+        'mismatch_count': int(len(mismatched)),
+        'payroll_total': round(float(rows['payroll'].sum()), 2),
+        'invoice_total': round(float(rows['invoice'].fillna(0).sum()), 2),
+        'net_variance': round(float(mismatched['difference'].sum()), 2),
+        'gross_variance': round(float(mismatched['difference'].abs().sum()), 2),
+    }
+    logger.info("%d of %d employees mismatched, net %.2f, gross %.2f",
+                summary['mismatch_count'], summary['employees_compared'],
+                summary['net_variance'], summary['gross_variance'])
+    return summary
+
+
+def find_repeat_offenders(mismatch_history, runs, min_streak=2):
+    """
+    Employees mismatched in at least `min_streak` consecutive months
+    for the same provider and payroll code.
+
+    mismatch_history: from db.load_mismatch_history
+    runs:             DataFrame of db.list_runs (used to tell if a streak is ongoing)
+    """
+    columns = ['provider', 'metric', 'eecode', 'name', 'months_mismatched',
+               'longest_streak', 'current_streak', 'latest_year', 'latest_month',
+               'latest_difference']
+    if mismatch_history.empty or runs.empty:
+        return pd.DataFrame(columns=columns)
+
+    history = mismatch_history.assign(
+        period=mismatch_history['year'] * 12 + mismatch_history['month'] - 1
+    )
+    latest_run = (
+        runs.assign(period=runs['year'] * 12 + runs['month'] - 1)
+        .groupby(['provider', 'metric'])['period']
+        .max()
+    )
+
+    results = []
+    for (provider, metric, eecode), group in (
+        history.sort_values('period').groupby(['provider', 'metric', 'eecode'])
+    ):
+        periods = group['period'].tolist()
+        longest = streak = 1
+        for previous, current in zip(periods, periods[1:]):
+            streak = streak + 1 if current == previous + 1 else 1
+            longest = max(longest, streak)
+
+        if longest < min_streak:
+            continue
+
+        # The streak only counts as ongoing if it reaches the latest month compared.
+        ongoing = periods[-1] == latest_run.get((provider, metric))
+        last = group.iloc[-1]
+        results.append({
+            'provider': provider,
+            'metric': metric,
+            'eecode': eecode,
+            'name': last['name'],
+            'months_mismatched': len(periods),
+            'longest_streak': longest,
+            'current_streak': streak if ongoing else 0,
+            'latest_year': int(last['year']),
+            'latest_month': int(last['month']),
+            'latest_difference': float(last['difference']),
+        })
+
+    if not results:
+        return pd.DataFrame(columns=columns)
+    return (
+        pd.DataFrame(results, columns=columns)
+        .sort_values(['current_streak', 'longest_streak', 'months_mismatched'], ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Legacy helpers (no longer used by app.py; kept for notebooks and scripts)
+# ---------------------------------------------------------------------------
+
+def combine_paycom_data(p1, p2):
+    """Combine two Paycom reports for the same month into one row per employee."""
+    p1, missing1 = transform_paycom(p1)
+    p2, missing2 = transform_paycom(p2)
+
+    missing_cols = sorted(set(missing1) | set(missing2))
+    if missing_cols:
+        logger.warning("Missing payroll columns (filled with 0): %s", missing_cols)
+
+    agg_map = {'eename': 'first', **{col: 'sum' for col in NUMERIC_COLS}}
+    return (
+        pd.concat([p1, p2], ignore_index=True)
+        .groupby('eecode', as_index=False)
+        .agg(agg_map)
+    )
+
+
 def create_comparison_df(df_1, df_2, col, unumType=None):
     """
     Compare a payroll column in df_1 (Paycom) against 'EE Deductable' in df_2 (invoice).
-
     Returns only the mismatched rows, with difference = PAYROLL - INVOICE.
-    Pass col='unum' together with unumType to compare a specific UNUM code.
     """
     if col == 'unum':
         if not unumType:
@@ -186,12 +380,9 @@ def create_comparison_df(df_1, df_2, col, unumType=None):
 
     comparison = df_1.merge(df_2, on='eecode', how='outer', suffixes=('_df1', '_df2'))
     comparison.columns = comparison.columns.str.strip()
-    logger.debug("Comparison for %s:\n%s", col, comparison)
 
     comparison[col] = pd.to_numeric(comparison[col], errors='coerce').fillna(0)
     comparison['EE Deductable'] = pd.to_numeric(comparison['EE Deductable'], errors='coerce')
-
-    # PAYROLL - INVOICE = DIFFERENCE (anyone missing from a side counts as 0 there)
     comparison['difference'] = (
         comparison[col] - comparison['EE Deductable'].fillna(0)
     ).round(2)
@@ -199,24 +390,13 @@ def create_comparison_df(df_1, df_2, col, unumType=None):
 
     output_cols = ['eecode', col, 'EE Deductable', 'difference']
     if 'eename_df1' in comparison:
-        # Prefer the Paycom name; fall back to the invoice name for people not in payroll.
         comparison['Name'] = comparison['eename_df1'].fillna(comparison['eename_df2'])
         output_cols.append('Name')
 
-    mismatches = (
+    return (
         comparison.loc[~comparison['match'], output_cols]
         .rename(columns={'EE Deductable': 'Invoice'})
     )
-
-    if mismatches.empty:
-        logger.info("%s: no mismatches", col)
-    else:
-        logger.info("%s: %d mismatch(es), net variance %.2f",
-                    col, len(mismatches), mismatches['difference'].sum())
-        for eecode, diff in zip(mismatches['eecode'], mismatches['difference']):
-            logger.info("  eecode %s: variance %.2f", eecode, diff)
-
-    return mismatches
 
 
 def create_name_map(health_data_transformed):
