@@ -438,7 +438,7 @@ button.selected .plan-status {
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 22px;
 }
@@ -886,6 +886,10 @@ td.heat-empty {
    ========================= */
 
 @media (max-width: 980px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .results-grid,
   .trends-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -931,4 +935,265 @@ td.heat-empty {
   .dropzone:hover {
     transform: none;
   }
+}
+
+/* =========================
+   Running balances: employee grid and detail panel
+   ========================= */
+
+.grid-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.grid-controls button {
+  margin: 0;
+}
+
+.grid-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 4px 0 12px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.grid-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ledger-scroll {
+  max-height: 520px;
+}
+
+.ledger-grid th,
+.ledger-grid td {
+  padding: 0;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.ledger-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 9px 10px;
+}
+
+.ledger-grid .sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 170px;
+  padding: 7px 12px;
+  text-align: left;
+  border-right: 1px solid var(--border);
+}
+
+.ledger-grid tbody .sticky-col {
+  background: var(--white);
+  color: var(--text-dark);
+  font-weight: 600;
+}
+
+.ledger-grid thead .sticky-col {
+  z-index: 3;
+}
+
+.ledger-grid tbody tr:hover {
+  background: transparent;
+}
+
+.ledger-grid tbody tr:hover .sticky-col {
+  background: var(--kai-sky);
+}
+
+.ledger-cell {
+  min-width: 64px;
+  padding: 7px 10px !important;
+  border-left: 1px solid #f1f5f9;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-cell.zero,
+.ledger-cell.gap {
+  color: #a3aebd;
+}
+
+.cell-button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline dotted;
+}
+
+.cell-button:hover {
+  background: none;
+  transform: none;
+  text-decoration: underline;
+}
+
+.catch-up-mark {
+  margin-left: 4px;
+  font-weight: 700;
+  color: var(--good);
+}
+
+.balance-col {
+  position: sticky;
+  right: 0;
+  min-width: 96px;
+  padding: 7px 12px !important;
+  background: var(--white);
+  border-left: 1px solid var(--border);
+}
+
+.ledger-grid thead .balance-col {
+  background: var(--kai-blue);
+  z-index: 3;
+}
+
+.balance-open {
+  font-weight: 700;
+  color: var(--type-invoice);
+}
+
+.balance-settled {
+  font-weight: 600;
+  color: var(--good);
+}
+
+.employee-link {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--kai-blue-dark);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: rgba(0, 63, 125, 0.35);
+}
+
+.employee-link:hover {
+  background: none;
+  transform: none;
+  text-decoration-color: currentColor;
+}
+
+.ledger-grid .employee-code {
+  display: block;
+  font-weight: 400;
+}
+
+.ledger-badge {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ledger-settled,
+.ledger-partial_catch_up {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.ledger-over_corrected {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.ledger-new,
+.ledger-growing {
+  background: #ffe4e6;
+  color: #9f1239;
+}
+
+/* Detail panel */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.detail-panel {
+  width: min(760px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  padding: 24px 26px 40px;
+  background: var(--white);
+  box-shadow: -12px 0 30px rgba(15, 23, 42, 0.18);
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.detail-header h2 {
+  margin: 0;
+  color: var(--kai-blue-dark);
+}
+
+.detail-header button {
+  margin: 0;
+}
+
+.detail-plan {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 2px solid var(--kai-blue-light);
+}
+
+.detail-scroll {
+  max-height: 320px;
+  margin-top: 10px;
+}
+
+@media (max-width: 520px) {
+  .kpi-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .detail-panel {
+    padding: 18px 16px 32px;
+  }
+
+  .ledger-grid .sticky-col {
+    min-width: 130px;
+  }
+}
+
+/* In tables, the balance status sits under the amount. */
+.mismatch-table td.num .ledger-badge {
+  display: table;
+  margin-left: auto;
 }

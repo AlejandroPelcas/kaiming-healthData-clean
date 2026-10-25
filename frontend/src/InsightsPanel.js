@@ -60,6 +60,20 @@ function InsightsPanel({ run, previousRun, topRow, typeFilter, onTypeFilter }) {
       field: "largest_variance",
       isMoney: true,
     },
+    {
+      label: "Outstanding balance",
+      value: formatMoney(run.outstanding ?? 0),
+      note: run.open_count
+        ? `${run.open_count} ${run.open_count === 1 ? "employee" : "employees"} still open after catch-ups`
+        : "Every difference so far has been caught up",
+      noDelta: true,
+    },
+    {
+      label: "Caught up this month",
+      value: run.settled_count ?? 0,
+      note: "Balances brought back to zero by a catch-up",
+      noDelta: true,
+    },
   ];
 
   const types = Object.entries(MISMATCH_TYPES).map(([key, info]) => ({
@@ -80,12 +94,14 @@ function InsightsPanel({ run, previousRun, topRow, typeFilter, onTypeFilter }) {
             <p className="kpi-label">{kpi.label}</p>
             <p className="kpi-value">{kpi.value}</p>
             <p className="kpi-note">{kpi.note}</p>
-            <Delta
-              current={run[kpi.field]}
-              previous={previousRun?.[kpi.field]}
-              previousRun={previousRun}
-              isMoney={kpi.isMoney}
-            />
+            {!kpi.noDelta && (
+              <Delta
+                current={run[kpi.field]}
+                previous={previousRun?.[kpi.field]}
+                previousRun={previousRun}
+                isMoney={kpi.isMoney}
+              />
+            )}
           </div>
         ))}
       </div>

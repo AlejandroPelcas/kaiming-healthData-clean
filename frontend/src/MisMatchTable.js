@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  LEDGER_STATUS,
   MISMATCH_TYPES,
   formatMoney,
   formatSignedMoney,
@@ -14,6 +15,7 @@ const COLUMNS = [
   { key: "payroll", label: "Payroll", numeric: true },
   { key: "invoice", label: "Invoice", numeric: true },
   { key: "difference", label: "Difference", numeric: true },
+  { key: "balance", label: "Balance", numeric: true },
 ];
 
 function csvCell(value) {
@@ -26,7 +28,7 @@ function csvCell(value) {
 function downloadCsv(rows, run) {
   const header = [
     "Employee code", "Name", "Type", "Payroll", "Days 1-15", "Days 16-31",
-    "Invoice", "Difference", "Matches one paycheck",
+    "Invoice", "Difference", "Matches one paycheck", "Running balance", "Balance status",
   ];
   const lines = rows.map((row) => [
     row.eecode,
@@ -38,6 +40,8 @@ function downloadCsv(rows, run) {
     row.invoice ?? "",
     row.difference,
     row.one_paycheck ? "Yes" : "",
+    row.balance ?? "",
+    LEDGER_STATUS[row.ledger_status] ?? "",
   ]);
   const csv = [header, ...lines].map((cells) => cells.map(csvCell).join(",")).join("\r\n");
 
@@ -222,6 +226,12 @@ function MisMatchTable({ rows, run, selectedEecode, onSelect, typeFilter, onType
                 </td>
                 <td className="num">{formatMoney(row.invoice)}</td>
                 <td className="num difference">{formatSignedMoney(row.difference)}</td>
+                <td className="num">
+                  {row.balance == null ? "—" : formatSignedMoney(row.balance)}
+                  {row.ledger_status && row.ledger_status !== "clear" && (
+                    <div className={`ledger-badge ledger-${row.ledger_status}`}>{LEDGER_STATUS[row.ledger_status]}</div>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -232,7 +242,7 @@ function MisMatchTable({ rows, run, selectedEecode, onSelect, typeFilter, onType
       </div>
       <p className="helper-text table-footnote">
         Showing {visibleRows.length} of {rows.length}. Differences under $0.05 are ignored.
-        Difference is payroll minus invoice.
+        Difference is payroll minus invoice; Balance adds up every month's difference, so a catch-up brings it back to zero.
       </p>
     </div>
   );

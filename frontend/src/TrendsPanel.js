@@ -11,7 +11,10 @@ import {
   YAxis,
 } from "recharts";
 import {
+  DIRECTION,
+  LEDGER_STATUS,
   PLANS,
+  directionColor,
   formatCompactMoney,
   formatMoney,
   formatSignedMoney,
@@ -26,150 +29,146 @@ import {
 const MAX_MONTHS = 12;
 const round2 = (value) => Math.round(value * 100) / 100;
 
+const MEASURES = {
+  outstanding: {
+    label: "Outstanding",
+    note: "Each cell is what's still owed for that plan at the end of the month, after catch-ups. ✓ means nothing outstanding.",
+  },
+  net: {
+    label: "Net",
+    note: "Each cell is that month's differences added up with their signs, so a catch-up shows in the opposite color.",
+  },
+  gross: {
+    label: "Gross",
+    note: "Each cell is that month's differences added up ignoring direction, so a catch-up counts as another difference.",
+  },
+};
+
 function TrendDot({ cx, cy, payload, index }) {
   if (cx == null || cy == null) return <g key={index} />;
   return (
-    <circle
-      key={index}
-      cx={cx}
-      cy={cy}
-      r={payload.outlier ? 6 : 3.5}
-      fill={payload.outlier ? "#be123c" : "#005baa"}
-      stroke="#ffffff"
-      strokeWidth={1.5}
-    />
+    <circle key={index} cx={cx} cy={cy} r={payload.outlier ? 6 : 3.5}
+      fill={payload.outlier ? "#be123c" : "#005baa"} stroke="#ffffff" strokeWidth={1.5} />
   );
 }
 
 function TrendTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
-  const point = payload[0].payload;
+  const p = payload[0].payload;
   return (
     <div className="chart-tooltip">
-      <strong>{point.fullLabel}</strong>
-      <span>Gross variance {formatMoney(point.gross)}</span>
-      <span>Net variance {formatSignedMoney(point.net)}</span>
-      <span>Employees with a difference {point.mismatches}</span>
-      {point.outlier && <span className="tooltip-flag">Unusually high month</span>}
+      <strong>{p.fullLabel}</strong>
+      <span>Outstanding {formatMoney(p.outstanding)}</span>
+      <span>Net {formatSignedMoney(p.net)}, gross {formatMoney(p.gross)}</span>
+      <span>Open balances {p.open_count}, settled {p.settled_count}</span>
+      {p.outlier && <span className="tooltip-flag">Unusually high month</span>}
     </div>
   );
 }
 
-function TrendsPanel({ runs, activeRun, offenders, onOpenRun }) {
+function TrendsPanel({ ledgerSummary, openBalances, activeRun, onOpenPlanMonth, onOpenEmployee }) {
   const [scope, setScope] = useState("plan");
+  const [measure, setMeasure] = useState("outstanding");
   const planCode = activeRun?.metric;
   const effectiveScope = planCode ? scope : "all";
   const animate = !prefersReducedMotion();
 
-  // Columns for the history grid: the most recent months that have any comparison.
   const periods = useMemo(() => {
     const seen = new Map();
-    runs.forEach((run) => {
-      const idx = periodIndex(run.year, run.month);
-      if (!seen.has(idx)) {
-        seen.set(idx, { idx, year: run.year, month: run.month, label: shortPeriodLabel(run.year, run.month) });
-      }
+    ledgerSummary.forEach((s) => {
+      const idx = periodIndex(s.year, s.month);
+      if (!seen.has(idx)) seen.set(idx, { idx, label: shortPeriodLabel(s.year, s.month) });
     });
     return [...seen.values()].sort((a, b) => a.idx - b.idx).slice(-MAX_MONTHS);
-  }, [runs]);
+  }, [ledgerSummary]);
 
-  const runLookup = useMemo(() => {
-    const lookup = new Map();
-    runs.forEach((run) => lookup.set(`${run.metric}-${periodIndex(run.year, run.month)}`, run));
-    return lookup;
-  }, [runs]);
+  const lookup = useMemo(() => {
+    const map = new Map();
+    ledgerSummary.forEach((s) => map.set(`${s.metric}-${periodIndex(s.year, s.month)}`, s));
+    return map;
+  }, [ledgerSummary]);
 
-  const plansWithRuns = PLANS.filter((plan) => runs.some((run) => run.metric === plan.code));
-  const maxGross = Math.max(1, ...runs.map((run) => run.gross_variance));
+  const plansWithData = PLANS.filter((p) => ledgerSummary.some((s) => s.metric === p.code));
+  const maxValue = Math.max(1, ...ledgerSummary.map((s) => Math.abs(s[measure])));
 
   const trendData = useMemo(() => {
-    const source = effectiveScope === "plan" ? runs.filter((run) => run.metric === planCode) : runs;
+    const source = effectiveScope === "plan" ? ledgerSummary.filter((s) => s.metric === planCode) : ledgerSummary;
     const byPeriod = new Map();
-    source.forEach((run) => {
-      const idx = periodIndex(run.year, run.month);
-      const point = byPeriod.get(idx) ?? {
-        idx,
-        label: shortPeriodLabel(run.year, run.month),
-        fullLabel: periodLabel(run.year, run.month),
-        gross: 0,
-        net: 0,
-        mismatches: 0,
+    source.forEach((s) => {
+      const idx = periodIndex(s.year, s.month);
+      const p = byPeriod.get(idx) ?? {
+        idx, label: shortPeriodLabel(s.year, s.month), fullLabel: periodLabel(s.year, s.month),
+        outstanding: 0, net: 0, gross: 0, open_count: 0, settled_count: 0,
       };
-      point.gross += run.gross_variance;
-      point.net += run.net_variance;
-      point.mismatches += run.mismatch_count;
-      byPeriod.set(idx, point);
+      ["outstanding", "net", "gross", "open_count", "settled_count"].forEach((k) => (p[k] += s[k]));
+      byPeriod.set(idx, p);
     });
+    const points = [...byPeriod.values()].sort((a, b) => a.idx - b.idx)
+      .map((p) => ({ ...p, outstanding: round2(p.outstanding), net: round2(p.net), gross: round2(p.gross) }));
+    const threshold = outlierThreshold(points.map((p) => p.outstanding));
+    return points.map((p) => ({ ...p, outlier: p.outstanding > threshold }));
+  }, [ledgerSummary, effectiveScope, planCode]);
 
-    const points = [...byPeriod.values()]
-      .sort((a, b) => a.idx - b.idx)
-      .map((point) => ({ ...point, gross: round2(point.gross), net: round2(point.net) }));
-    const threshold = outlierThreshold(points.map((point) => point.gross));
-    return points.map((point) => ({ ...point, outlier: point.gross > threshold }));
-  }, [runs, effectiveScope, planCode]);
+  const balanceRows = effectiveScope === "plan" ? openBalances.filter((b) => b.metric === planCode) : openBalances;
+  const trendTitle = effectiveScope === "plan" ? `${planLabel(planCode)} by month` : "All plans by month";
 
-  const offenderRows =
-    effectiveScope === "plan" ? offenders.filter((row) => row.metric === planCode) : offenders;
+  const cellStyle = (value) => {
+    if (!value) return undefined;
+    if (measure === "net") return { background: directionColor(value, maxValue) };
+    const strength = Math.abs(value) / maxValue;
+    return { background: `rgba(190, 18, 60, ${0.08 + strength * 0.62})`, color: strength > 0.5 ? "#ffffff" : undefined };
+  };
 
-  const trendTitle =
-    effectiveScope === "plan" ? `${planLabel(planCode)} by month` : "All plans by month";
+  const cellText = (value) => {
+    if (measure === "net") return `${value > 0 ? "+" : ""}${formatCompactMoney(value)}`;
+    return formatCompactMoney(value);
+  };
 
   return (
     <section className="section-card">
       <h2>History and trends</h2>
 
       <div className="trends-block">
-        <h3>Monthly history</h3>
-        <p className="chart-note">
-          Each cell is that month's gross variance for the plan. Darker means larger. ✓ means
-          everything matched. Select a cell to open that comparison.
-        </p>
+        <div className="heading-row">
+          <h3>Monthly history</h3>
+          <div className="segmented" role="group" aria-label="Grid measure">
+            {Object.entries(MEASURES).map(([key, m]) => (
+              <button key={key} type="button" className={measure === key ? "selected" : ""}
+                onClick={() => setMeasure(key)} aria-pressed={measure === key}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="chart-note">{MEASURES[measure].note} Select a cell to open that comparison.</p>
         <div className="table-scroll heatmap-scroll">
           <table className="heatmap">
             <thead>
               <tr>
                 <th scope="col">Plan</th>
-                {periods.map((period) => (
-                  <th key={period.idx} scope="col">
-                    {period.label}
-                  </th>
-                ))}
+                {periods.map((p) => <th key={p.idx} scope="col">{p.label}</th>)}
               </tr>
             </thead>
             <tbody>
-              {plansWithRuns.map((plan) => (
+              {plansWithData.map((plan) => (
                 <tr key={plan.code}>
                   <th scope="row">{plan.label}</th>
-                  {periods.map((period) => {
-                    const run = runLookup.get(`${plan.code}-${period.idx}`);
-                    if (!run) {
-                      return (
-                        <td key={period.idx} className="heat-empty" title="Not compared">
-                          –
-                        </td>
-                      );
-                    }
-                    const clean = run.mismatch_count === 0;
-                    const intensity = run.gross_variance / maxGross;
+                  {periods.map((p) => {
+                    const s = lookup.get(`${plan.code}-${p.idx}`);
+                    if (!s) return <td key={p.idx} className="heat-empty" title="Not compared">–</td>;
+                    const value = s[measure];
+                    const clean = measure !== "net" && value === 0;
+                    const active = activeRun?.metric === plan.code && activeRun?.year === s.year && activeRun?.month === s.month;
                     return (
-                      <td key={period.idx}>
+                      <td key={p.idx}>
                         <button
                           type="button"
-                          className={`heat-cell ${clean ? "clean" : ""} ${activeRun?.id === run.id ? "active" : ""}`}
-                          style={
-                            clean
-                              ? undefined
-                              : {
-                                  background: `rgba(190, 18, 60, ${0.08 + intensity * 0.62})`,
-                                  color: intensity > 0.5 ? "#ffffff" : undefined,
-                                }
-                          }
-                          onClick={() => onOpenRun(run.id)}
-                          aria-label={`${plan.label}, ${periodLabel(run.year, run.month)}: ${
-                            clean ? "everything matched" : `${formatMoney(run.gross_variance)} gross variance`
-                          }`}
+                          className={`heat-cell ${clean ? "clean" : ""} ${active ? "active" : ""}`}
+                          style={clean ? undefined : cellStyle(value)}
+                          onClick={() => onOpenPlanMonth(plan.code, s.year, s.month)}
+                          aria-label={`${plan.label}, ${periodLabel(s.year, s.month)}: ${MEASURES[measure].label.toLowerCase()} ${measure === "net" ? formatSignedMoney(value) : formatMoney(value)}`}
                         >
-                          {clean ? "✓" : formatCompactMoney(run.gross_variance)}
+                          {clean ? "✓" : cellText(value)}
                         </button>
                       </td>
                     );
@@ -179,6 +178,12 @@ function TrendsPanel({ runs, activeRun, offenders, onOpenRun }) {
             </tbody>
           </table>
         </div>
+        {measure === "net" && (
+          <div className="grid-legend">
+            <span><span className="swatch" style={{ background: `rgb(${DIRECTION.negative.color})` }} /> {DIRECTION.negative.label}</span>
+            <span><span className="swatch" style={{ background: `rgb(${DIRECTION.positive.color})` }} /> {DIRECTION.positive.label}</span>
+          </div>
+        )}
       </div>
 
       <div className="trends-grid">
@@ -187,20 +192,10 @@ function TrendsPanel({ runs, activeRun, offenders, onOpenRun }) {
             <h3>{trendTitle}</h3>
             {planCode && (
               <div className="segmented" role="group" aria-label="Trend scope">
-                <button
-                  type="button"
-                  className={scope === "plan" ? "selected" : ""}
-                  onClick={() => setScope("plan")}
-                  aria-pressed={scope === "plan"}
-                >
+                <button type="button" className={scope === "plan" ? "selected" : ""} onClick={() => setScope("plan")} aria-pressed={scope === "plan"}>
                   {planLabel(planCode)}
                 </button>
-                <button
-                  type="button"
-                  className={scope === "all" ? "selected" : ""}
-                  onClick={() => setScope("all")}
-                  aria-pressed={scope === "all"}
-                >
+                <button type="button" className={scope === "all" ? "selected" : ""} onClick={() => setScope("all")} aria-pressed={scope === "all"}>
                   All plans
                 </button>
               </div>
@@ -222,13 +217,15 @@ function TrendsPanel({ runs, activeRun, offenders, onOpenRun }) {
                   <YAxis yAxisId="count" orientation="right" allowDecimals={false} tick={{ fontSize: 12 }} width={32} />
                   <Tooltip content={<TrendTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar yAxisId="count" dataKey="mismatches" name="Employees with a difference" fill="#c7ddf3" radius={[4, 4, 0, 0]} maxBarSize={28} isAnimationActive={animate} />
-                  <Line yAxisId="money" dataKey="gross" name="Gross variance" stroke="#005baa" strokeWidth={2} dot={(props) => <TrendDot {...props} key={props.index} />} isAnimationActive={animate} />
-                  <Line yAxisId="money" dataKey="net" name="Net variance" stroke="#64748b" strokeDasharray="5 4" dot={false} isAnimationActive={animate} />
+                  <Bar yAxisId="count" dataKey="open_count" name="Open balances" fill="#c7ddf3" radius={[4, 4, 0, 0]} maxBarSize={28} isAnimationActive={animate} />
+                  <Line yAxisId="money" dataKey="outstanding" name="Outstanding" stroke="#005baa" strokeWidth={2.5}
+                    dot={(props) => <TrendDot {...props} key={props.index} />} isAnimationActive={animate} />
+                  <Line yAxisId="money" dataKey="gross" name="Gross" stroke="#94a3b8" strokeDasharray="5 4" dot={false} isAnimationActive={animate} />
                 </ComposedChart>
               </ResponsiveContainer>
               <p className="chart-note">
-                Red points mark months with unusually high gross variance.
+                Outstanding drops when a catch-up lands; gross counts the catch-up as another difference. Red points
+                mark months with unusually high outstanding balances.
                 {effectiveScope === "all" && " Totals only include plans compared so far in each month."}
               </p>
             </>
@@ -236,14 +233,13 @@ function TrendsPanel({ runs, activeRun, offenders, onOpenRun }) {
         </div>
 
         <div>
-          <h3>Repeat differences</h3>
+          <h3>Open balances</h3>
           <p className="chart-note">
-            Employees with a difference in two or more months in a row
-            {effectiveScope === "plan" ? ` for ${planLabel(planCode)}` : ""}. Ongoing means it's
-            still showing up in the latest month compared.
+            Employees with a balance still open{effectiveScope === "plan" ? ` for ${planLabel(planCode)}` : ""} as
+            of the latest month compared. Catch-ups usually land the following month, so one month open is normal.
           </p>
-          {offenderRows.length === 0 ? (
-            <p className="empty-state">No one has a difference two months in a row.</p>
+          {balanceRows.length === 0 ? (
+            <p className="empty-state">Nothing open. Every difference has been caught up.</p>
           ) : (
             <div className="table-scroll offender-scroll">
               <table className="mismatch-table">
@@ -251,29 +247,31 @@ function TrendsPanel({ runs, activeRun, offenders, onOpenRun }) {
                   <tr>
                     <th>Employee</th>
                     {effectiveScope === "all" && <th>Plan</th>}
-                    <th>Months in a row</th>
-                    <th className="num">Latest</th>
+                    <th>Open for</th>
+                    <th className="num">Balance</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {offenderRows.map((row) => (
-                    <tr key={`${row.metric}-${row.eecode}`}>
+                  {balanceRows.map((b) => (
+                    <tr key={`${b.metric}-${b.eecode}`}>
                       <td>
-                        <div className="employee-name">{row.name ?? "Name not found"}</div>
-                        <div className="employee-code">{row.eecode}</div>
+                        <button type="button" className="employee-link" onClick={() => onOpenEmployee(b.eecode)}>
+                          {b.name ?? "Name not found"}
+                        </button>
+                        <div className="employee-code">{b.eecode}</div>
                       </td>
-                      {effectiveScope === "all" && <td>{planLabel(row.metric)}</td>}
+                      {effectiveScope === "all" && <td>{planLabel(b.metric)}</td>}
                       <td>
-                        {row.current_streak > 0 ? (
-                          <span className="ongoing">{row.current_streak}, ongoing</span>
-                        ) : (
-                          `${row.longest_streak}, ended`
-                        )}
+                        <span className={b.months_open > 1 ? "ongoing" : ""}>
+                          {b.months_open} {b.months_open === 1 ? "month" : "months"}
+                        </span>
+                        <div className="split">
+                          {b.status === "open" || b.status === "growing" || b.status === "new"
+                            ? `since ${shortPeriodLabel(b.open_since.year, b.open_since.month)}`
+                            : LEDGER_STATUS[b.status]}
+                        </div>
                       </td>
-                      <td className="num">
-                        {formatSignedMoney(row.latest_difference)}
-                        <div className="split">{shortPeriodLabel(row.latest_year, row.latest_month)}</div>
-                      </td>
+                      <td className="num">{formatSignedMoney(b.balance)}</td>
                     </tr>
                   ))}
                 </tbody>

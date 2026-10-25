@@ -113,3 +113,27 @@ export function outlierThreshold(values) {
 export function prefersReducedMotion() {
   return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
+
+// Running balance labels, from the backend's ledger statuses.
+export const LEDGER_STATUS = {
+  new: "New difference",
+  growing: "Still growing",
+  open: "Still open",
+  partial_catch_up: "Partial catch-up",
+  settled: "Catch-up, settled",
+  over_corrected: "Over-corrected",
+  clear: "No balance",
+};
+
+// Difference is payroll minus invoice. Colors match --direction-* in App.css.
+export const DIRECTION = {
+  negative: { label: "Billed more than deducted", color: "190, 18, 60" },
+  positive: { label: "Deducted more than billed", color: "0, 91, 170" },
+};
+
+export function directionColor(amount, maxAbs) {
+  if (!amount || !maxAbs) return undefined;
+  const { color } = amount < 0 ? DIRECTION.negative : DIRECTION.positive;
+  const strength = Math.min(Math.abs(amount) / maxAbs, 1);
+  return `rgba(${color}, ${0.1 + strength * 0.55})`;
+}

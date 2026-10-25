@@ -10,13 +10,17 @@ async function request(path, options) {
   }
 
   let data = null;
+  let unreadable = false;
   try {
     data = await response.json();
   } catch {
-    // Non-JSON response; handled below.
+    unreadable = true;
   }
   if (!response.ok) {
     throw new Error(data?.error || `Request failed (${response.status}).`);
+  }
+  if (unreadable) {
+    throw new Error(`The server sent a response for ${path} that couldn't be read.`);
   }
   return data;
 }
@@ -49,6 +53,11 @@ export const api = {
   run: (runId) => request(`/api/runs/${runId}`),
 
   repeatOffenders: () => request("/api/repeat-offenders"),
+
+  ledgerSummary: () => request("/api/ledger/summary"),
+  openBalances: () => request("/api/ledger/open"),
+  ledgerGrid: (metric, months) => request(`/api/ledger/grid?metric=${encodeURIComponent(metric)}&months=${months}`),
+  employeeHistory: (eecode) => request(`/api/employees/${encodeURIComponent(eecode)}/history`),
 
   ask: (question, context) =>
     request("/ask-ollama", {

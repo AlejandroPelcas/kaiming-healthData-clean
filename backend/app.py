@@ -18,9 +18,11 @@ from datetime import datetime, timezone
 import pandas as pd
 import requests
 from flask import Flask, jsonify, request, send_from_directory
+from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 
 import db
+import ledger
 from util import (
     NUMERIC_COLS,
     compare_payroll_to_invoice,
@@ -47,6 +49,17 @@ FRONTEND_ORIGINS = os.environ.get(
 ).split(",")
 
 app = Flask(__name__, static_folder="frontend/build", static_url_path="")
+
+
+class StrictJSONProvider(DefaultJSONProvider):
+    """Refuse to send NaN: it isn't valid JSON, and browsers reject the whole response."""
+
+    def dumps(self, obj, **kwargs):
+        kwargs.setdefault("allow_nan", False)
+        return super().dumps(obj, **kwargs)
+
+
+app.json = StrictJSONProvider(app)
 CORS(app, origins=FRONTEND_ORIGINS)
 db.init_db()
 
@@ -158,10 +171,13 @@ def run_comparison(year, month, sheet_name, provider, metric_code, health_file):
 
 
 def run_payload(run_id, include_all=False):
-    return {
-        "run": db.get_run(run_id),
-        "rows": db.get_run_rows(run_id, mismatches_only=not include_all),
-    }
+    """A run's summary and rows, each row with the employee's running balance after this month."""
+    run = db.get_run(run_id)
+    rows = db.get_run_rows(run_id, mismatches_only=not include_all)
+    balances, totals = ledger.run_ledger(run_id, run["metric"], run["year"], run["month"])
+    for row in rows:
+        row.update(balances.get(row["eecode"], {"balance": None, "ledger_status": None}))
+    return {"run": {**run, **totals}, "rows": rows}
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +305,41 @@ def repeat_offenders():
     history = db.load_mismatch_history(provider=provider, metric=metric)
     runs = pd.DataFrame(db.list_runs(provider=provider, metric=metric))
     return jsonify(df_to_records(find_repeat_offenders(history, runs, min_streak=min_months)))
+
+
+# ---------------------------------------------------------------------------
+# Running balances and employee history
+# ---------------------------------------------------------------------------
+
+@app.route("/api/ledger/summary")
+def ledger_summary():
+    """Per plan and month: outstanding balance, net and gross differences, open and settled counts."""
+    return jsonify(ledger.plan_month_summary())
+
+
+@app.route("/api/ledger/open")
+def ledger_open():
+    """Employees with a balance still open as of each plan's latest compared month."""
+    return jsonify(ledger.open_balances())
+
+
+@app.route("/api/ledger/grid")
+def ledger_grid():
+    """Employee-by-month grid. ?metric=dvsn (one plan) or all (default); ?months=12."""
+    metric = request.args.get("metric", "all")
+    if metric != "all" and metric not in NUMERIC_COLS:
+        raise InputError(f"Unknown plan {metric!r}.")
+    months = min(max(request.args.get("months", default=12, type=int), 1), 60)
+    return jsonify(ledger.employee_grid(metric, months))
+
+
+@app.route("/api/employees/<eecode>/history")
+def employee_history(eecode):
+    """One employee's month-by-month differences and running balance for each plan."""
+    history = ledger.employee_history(eecode)
+    if history is None:
+        return jsonify({"error": "No comparisons found for this employee."}), 404
+    return jsonify(history)
 
 
 # ---------------------------------------------------------------------------

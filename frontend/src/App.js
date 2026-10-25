@@ -7,6 +7,8 @@ import MisMatchTable from "./MisMatchTable";
 import VarianceChart from "./VarianceChart";
 import TrendsPanel from "./TrendsPanel";
 import AskPanel from "./AskPanel";
+import EmployeeGrid from "./EmployeeGrid";
+import EmployeeDetail from "./EmployeeDetail";
 import { api } from "./api";
 import {
   MONTHS,
@@ -39,7 +41,10 @@ function App() {
 
   // Results
   const [runs, setRuns] = useState([]);
-  const [offenders, setOffenders] = useState([]);
+  const [ledgerSummary, setLedgerSummary] = useState([]);
+  const [openBalances, setOpenBalances] = useState([]);
+  const [ledgerVersion, setLedgerVersion] = useState(0);
+  const [detailEecode, setDetailEecode] = useState(null);
   const [activeRun, setActiveRun] = useState(null);
   const [rows, setRows] = useState([]);
   const [selectedEecode, setSelectedEecode] = useState(null);
@@ -53,9 +58,11 @@ function App() {
 
   const loadHistory = useCallback(async () => {
     try {
-      const [allRuns, repeat] = await Promise.all([api.runs(), api.repeatOffenders()]);
-      setRuns(allRuns);
-      setOffenders(repeat);
+      const [allRuns, summary, open] = await Promise.all([api.runs(), api.ledgerSummary(), api.openBalances()]);
+      setRuns(allRuns ?? []);
+      setLedgerSummary(summary ?? []);
+      setOpenBalances(open ?? []);
+      setLedgerVersion((v) => v + 1); // tells the employee grid to reload
     } catch (err) {
       setError(`Couldn't load saved results. ${err.message}`);
     }
@@ -171,11 +178,14 @@ function App() {
     }
   };
 
-  const openRun = async (runId) => {
+  // Open a saved comparison, optionally highlighting one employee in it.
+  const openRun = async (runId, eecode = null) => {
     clearMessages();
+    setDetailEecode(null);
     try {
       const data = await api.run(runId);
       showRun(data);
+      setSelectedEecode(eecode);
       setYear(String(data.run.year));
       setMonth(padMonth(data.run.month));
       setPlanCode(data.run.metric);
@@ -184,6 +194,13 @@ function App() {
       setError(err.message);
     }
   };
+
+  const openPlanMonth = (metric, runYear, runMonth) => {
+    const run = runs.find((r) => r.metric === metric && r.year === runYear && r.month === runMonth);
+    if (run) openRun(run.id);
+  };
+
+  const plansWithRuns = useMemo(() => new Set(runs.map((r) => r.metric)), [runs]);
 
   // Picking a bar in the chart selects the row, clearing a type filter that would hide it.
   const selectEmployee = (eecode) => {
@@ -364,7 +381,25 @@ function App() {
       )}
 
       {runs.length > 0 && (
-        <TrendsPanel runs={runs} activeRun={activeRun} offenders={offenders} onOpenRun={openRun} />
+        <>
+          <TrendsPanel
+            ledgerSummary={ledgerSummary}
+            openBalances={openBalances}
+            activeRun={activeRun}
+            onOpenPlanMonth={openPlanMonth}
+            onOpenEmployee={setDetailEecode}
+          />
+          <EmployeeGrid
+            plansWithRuns={plansWithRuns}
+            refreshKey={ledgerVersion}
+            onOpenRun={openRun}
+            onOpenEmployee={setDetailEecode}
+          />
+        </>
+      )}
+
+      {detailEecode && (
+        <EmployeeDetail eecode={detailEecode} onClose={() => setDetailEecode(null)} onOpenRun={openRun} />
       )}
     </main>
   );
